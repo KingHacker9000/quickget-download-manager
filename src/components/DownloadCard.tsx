@@ -26,6 +26,8 @@ export function DownloadCard({ download, busy = false, onPause, onResume, onCanc
   const canResume = download.state === "paused";
   const canCancel = ["queued", "starting", "downloading", "paused"].includes(download.state);
   const canDelete = ["completed", "failed", "cancelled"].includes(download.state);
+  const isActivelyDownloading = download.state === "downloading" || download.state === "starting";
+  const effectiveSpeed = isActivelyDownloading ? download.speed_bytes_per_sec : undefined;
 
   return (
     <article className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
@@ -44,8 +46,8 @@ export function DownloadCard({ download, busy = false, onPause, onResume, onCanc
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600 md:grid-cols-4">
         <div>{formatBytes(download.downloaded_bytes)} / {formatBytes(download.total_bytes)}</div>
         <div>{formatPercent(progress)}</div>
-        <div>{formatSpeedMBps(download.speed_bytes_per_sec)}</div>
-        <div>{formatEta(download.total_bytes, download.downloaded_bytes, download.speed_bytes_per_sec)}</div>
+        <div>{formatSpeedMBps(effectiveSpeed)}</div>
+        <div>{formatEta(download.total_bytes, download.downloaded_bytes, effectiveSpeed)}</div>
       </div>
 
       {(download.warning || download.error) && (

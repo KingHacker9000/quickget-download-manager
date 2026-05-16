@@ -60,10 +60,13 @@ function setState(updater: (current: DownloadsState) => DownloadsState) {
 
 function upsertInto(current: DownloadsState, snapshot: DownloadSnapshot): DownloadsState {
   const previous = current.byId[snapshot.id];
-  const merged = cloneSnapshot({
-    ...(previous ?? {}),
-    ...snapshot,
-  });
+  const mergedBase: DownloadSnapshot = { ...(previous ?? {}) };
+  for (const [key, value] of Object.entries(snapshot) as Array<[keyof DownloadSnapshot, DownloadSnapshot[keyof DownloadSnapshot]]>) {
+    if (value !== undefined) {
+      (mergedBase as Record<string, unknown>)[key as string] = value;
+    }
+  }
+  const merged = cloneSnapshot(mergedBase);
   const byId = { ...current.byId, [snapshot.id]: merged };
   return withDerivedLists({
     ...current,
@@ -168,4 +171,3 @@ function getSnapshot() {
 export function useDownloadsStore(): DownloadsState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
-

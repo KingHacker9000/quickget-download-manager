@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { AddDownloadModal } from "../components/AddDownloadModal";
 import { CommandBar } from "../components/CommandBar";
 import { DownloadRow } from "../components/DownloadRow";
+import { SettingsPanel } from "../components/SettingsPanel";
 import type { NavItem } from "../components/Sidebar";
 import type {
   AgentConnectionState,
@@ -10,6 +11,7 @@ import type {
   CreateDownloadRequest,
   DownloadSnapshot,
 } from "../types/agent";
+import type { AppSettings } from "../types/settings";
 
 type Props = {
   agentState: AgentConnectionState;
@@ -23,6 +25,10 @@ type Props = {
   onResume: (id: string) => void;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
+  settings: AppSettings | null;
+  settingsBusy: boolean;
+  onSettingsChange: (next: AppSettings) => void;
+  forceShowDownloadsToken: number;
 };
 
 function connectionText(state: AgentConnectionState, status: AgentStatus | null): string {
@@ -74,6 +80,10 @@ export function DownloadsPage({
   onResume,
   onCancel,
   onDelete,
+  settings,
+  settingsBusy,
+  onSettingsChange,
+  forceShowDownloadsToken,
 }: Props) {
   const [activeSection, setActiveSection] = useState<NavItem>("Downloads");
   const [modalOpen, setModalOpen] = useState(false);
@@ -88,6 +98,10 @@ export function DownloadsPage({
     setPrefillUrl(url);
     setModalOpen(true);
   };
+
+  useEffect(() => {
+    setActiveSection("Downloads");
+  }, [forceShowDownloadsToken]);
 
   useEffect(() => {
     const onKeyDown = async (event: KeyboardEvent) => {
@@ -194,6 +208,8 @@ export function DownloadsPage({
             onSubmit={onCreateDownload}
           />
         </>
+      ) : activeSection === "Settings" ? (
+        <SettingsPanel settings={settings} busy={settingsBusy} onChange={onSettingsChange} />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
           {activeSection} section is reserved for upcoming releases.

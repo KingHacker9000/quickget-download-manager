@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DownloadSnapshot } from "../types/agent";
-import { formatBytes, formatEta, formatPercent, formatSpeedMBps } from "../utils/format";
+import { formatBytes, formatDuration, formatEta, formatEtaLabel, formatPercent, formatSpeedMBps } from "../utils/format";
 import { ProgressBar } from "./ProgressBar";
 import { StatusPill } from "./StatusPill";
 
@@ -40,12 +40,21 @@ export function DownloadRow({
   const canPause = download.state === "downloading" || download.state === "starting";
   const canResume = download.state === "paused";
   const canCancel = ["queued", "starting", "downloading", "paused"].includes(download.state);
+  const isActivelyDownloading = download.state === "downloading" || download.state === "starting";
   const indeterminate = !download.total_bytes && ["queued", "starting", "downloading"].includes(download.state);
   const segments = download.segments ?? [];
   const activeSegments = segments.filter((segment) => segment.status === "running").length;
   const completedSegments = segments.filter((segment) => segment.status === "completed").length;
   const failedSegments = segments.filter((segment) => segment.status === "failed").length;
-  const etaText = formatEta(download.total_bytes, download.downloaded_bytes, download.speed_bytes_per_sec);
+  const effectiveSpeed = isActivelyDownloading ? download.speed_bytes_per_sec : undefined;
+  const etaText = formatEta(download.total_bytes, download.downloaded_bytes, effectiveSpeed);
+  const etaLabel = formatEtaLabel(download.total_bytes, download.downloaded_bytes, effectiveSpeed);
+  const completedAt = download.completed_at ?? download.updated_at;
+  const elapsedEnd =
+    download.state === "completed" || download.state === "paused"
+      ? completedAt
+      : undefined;
+  const elapsed = formatDuration(download.created_at, elapsedEnd);
 
   useEffect(() => {
     if (!debugProgressEnabled) return;
@@ -85,12 +94,13 @@ export function DownloadRow({
                     indeterminate={indeterminate}
                   />
                 </div>
-                <span className="min-w-14 text-right text-xs text-slate-300">{etaText}</span>
+                <span className="min-w-36 text-right text-xs text-slate-300">{etaLabel}</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-400 md:grid-cols-5">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-400 md:grid-cols-6">
                 <span>{formatPercent(progress)}</span>
-                <span>{formatSpeedMBps(download.speed_bytes_per_sec)}</span>
+                <span>{formatSpeedMBps(effectiveSpeed)}</span>
                 <span>{etaText}</span>
+                <span>Elapsed: {elapsed}</span>
                 <span>{formatBytes(download.downloaded_bytes)}</span>
                 <span>{formatBytes(download.total_bytes)}</span>
               </div>
@@ -106,9 +116,10 @@ export function DownloadRow({
           )}
 
           {isCompleted && (
-            <p className="mt-2 text-xs text-slate-400">
-              {formatBytes(download.total_bytes ?? download.downloaded_bytes)}
-            </p>
+            <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-400 md:grid-cols-2">
+              <p>{formatBytes(download.total_bytes ?? download.downloaded_bytes)}</p>
+              <p>Time taken: {formatDuration(download.created_at, completedAt)}</p>
+            </div>
           )}
         </div>
 

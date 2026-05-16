@@ -15,6 +15,26 @@ QDM does not implement downloading logic itself.
 
 QDM connects to `quickget-agent` from the sibling `QuickGet_CLI` backend repository over localhost HTTP and SSE.
 
+## Desktop lifecycle behavior (Windows-first)
+
+- Closing the main window (`X`) hides QDM to the system tray instead of exiting.
+- While hidden, the app process and `quickget-agent` stay alive and downloads continue.
+- Tray menu actions:
+  - `Open QuickGet Download Manager`
+  - `Pause All`
+  - `Resume All`
+  - `Show Downloads`
+  - `Quit`
+- `Quit` does not silently terminate active downloads.
+  - If active downloads exist, QDM asks: `Pause active downloads and quit?`
+  - Options: `Pause and Quit`, `Keep Running`, `Cancel`
+
+## Launch On Startup Setting
+
+- `Settings -> Launch on startup` controls OS auto-start registration.
+- Auto-start is never forced; user must explicitly enable it.
+- Settings are persisted locally in a user config file (`QuickGet/qdm-settings.json` under the OS config directory).
+
 ## Agent setup
 
 Fetch and prepare a bundled sidecar agent binary:

@@ -16,6 +16,11 @@ const AGENT_FETCH_BASE = import.meta.env.DEV ? AGENT_DEV_PROXY_BASE : AGENT_BASE
 const HEALTH_PATH = "/health";
 const DOWNLOADS_PATH = "/downloads";
 const EVENTS_PATH = "/events";
+const DEV_DEFAULT_CONNECTIONS = 8;
+const DEV_DEFAULT_QUEUE_MODE = true;
+const DEV_DEFAULT_SEGMENT_SIZE = 4 * 1024 * 1024;
+const DEV_DEFAULT_BUFFER_SIZE = 256 * 1024;
+const DEV_DEFAULT_HTTP1 = true;
 
 type EventCallback = (event: AgentEvent) => void;
 type ErrorCallback = (message: string) => void;
@@ -146,13 +151,17 @@ function mapCreatePayload(payload: CreateDownloadRequest): Record<string, unknow
   const connectionsFromMeta =
     typeof meta.max_simultaneous_downloads === "number" ? meta.max_simultaneous_downloads : undefined;
   const presetConnections =
-    speedMode === "aggressive" ? 12 : speedMode === "balanced" ? 8 : speedMode === "gentle" ? 4 : undefined;
+    speedMode === "aggressive" ? 12 : speedMode === "balanced" ? 8 : speedMode === "gentle" ? 4 : DEV_DEFAULT_CONNECTIONS;
 
   return {
     url: payload.url,
     ...(outputPath ? { outputPath } : {}),
     ...(payload.output_dir ? { directory: payload.output_dir } : {}),
-    ...(connectionsFromMeta ?? presetConnections ? { connections: connectionsFromMeta ?? presetConnections } : {}),
+    connections: connectionsFromMeta ?? presetConnections,
+    queueMode: DEV_DEFAULT_QUEUE_MODE,
+    segmentSize: DEV_DEFAULT_SEGMENT_SIZE,
+    bufferSize: DEV_DEFAULT_BUFFER_SIZE,
+    http1: DEV_DEFAULT_HTTP1,
     ...(payload.headers ? { headers: payload.headers } : {}),
   };
 }

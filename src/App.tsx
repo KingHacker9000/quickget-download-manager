@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   AGENT_EVENT_DOWNLOAD_COMPLETED,
   type AgentConnectionState,
@@ -15,6 +16,7 @@ import {
   pauseDownload,
   resumeDownload,
 } from "./api/agentClient";
+import { getSettings, handleQuitAction, hasActiveDownloads, saveSettings } from "./api/settingsClient";
 import {
   applyEvent,
   replaceDownloads,
@@ -23,8 +25,10 @@ import {
   upsertDownload,
   useDownloadsStore,
 } from "./state/downloadsStore";
+import { QuitConfirmModal } from "./components/QuitConfirmModal";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { Toasts, type ToastItem, type ToastTone } from "./components/Toasts";
+import type { AppSettings } from "./types/settings";
 
 function getErrorMessage(error: unknown): string {
   if (typeof error === "string" && error.trim().length > 0) return error;
@@ -57,6 +61,11 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [showQuitPrompt, setShowQuitPrompt] = useState(false);
+  const [quitBusy, setQuitBusy] = useState(false);
+  const [forceShowDownloadsToken, setForceShowDownloadsToken] = useState(0);
   const toastIdRef = useRef(1);
   const previousConnectionRef = useRef<AgentConnectionState>("starting");
   const notifiedCompletions = useRef<Set<string>>(new Set());
@@ -154,6 +163,48 @@ export default function App() {
     return () => {
       active = false;
       if (disconnectEvents) disconnectEvents();
+    };
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setSettings(await getSettings());
+      } catch (error) {
+        pushToast(`Failed to load settings: ${getErrorMessage(error)}`, "error");
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromises = [
+      listen("tray://show-downloads", async () => {
+        setForceShowDownloadsToken((v) => v + 1);
+      }),
+      listen("tray://downloads-paused", async () => {
+        const downloads = await listDownloads();
+        replaceDownloads(downloads);
+        pushToast("All active downloads paused", "info");
+      }),
+      listen("tray://downloads-resumed", async () => {
+        const downloads = await listDownloads();
+        replaceDownloads(downloads);
+        pushToast("Paused downloads resumed", "info");
+      }),
+      listen("app://request-quit", async () => {
+        const active = await hasActiveDownloads();
+        if (!active) {
+          await handleQuitAction("pauseAndQuit");
+          return;
+        }
+        setShowQuitPrompt(true);
+      }),
+    ];
+
+    return () => {
+      for (const promise of unlistenPromises) {
+        void promise.then((unlisten) => unlisten());
+      }
     };
   }, []);
 
@@ -256,6 +307,31 @@ export default function App() {
     });
   };
 
+  const onSettingsChange = async (next: AppSettings) => {
+    setSettings(next);
+    try {
+      setSettingsBusy(true);
+      const persisted = await saveSettings(next);
+      setSettings(persisted);
+    } catch (error) {
+      pushToast(`Failed to save settings: ${getErrorMessage(error)}`, "error");
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
+  const runQuitAction = async (action: "pauseAndQuit" | "keepRunning" | "cancel") => {
+    try {
+      setQuitBusy(true);
+      await handleQuitAction(action);
+      setShowQuitPrompt(false);
+    } catch (error) {
+      pushToast(`Quit action failed: ${getErrorMessage(error)}`, "error");
+    } finally {
+      setQuitBusy(false);
+    }
+  };
+
   return (
     <>
       <DownloadsPage
@@ -270,8 +346,19 @@ export default function App() {
         onResume={onResume}
         onCancel={onCancel}
         onDelete={onDelete}
+        settings={settings}
+        settingsBusy={settingsBusy}
+        onSettingsChange={onSettingsChange}
+        forceShowDownloadsToken={forceShowDownloadsToken}
       />
       <Toasts items={toasts} onDismiss={dismissToast} />
+      <QuitConfirmModal
+        open={showQuitPrompt}
+        busy={quitBusy}
+        onPauseAndQuit={() => void runQuitAction("pauseAndQuit")}
+        onKeepRunning={() => void runQuitAction("keepRunning")}
+        onCancel={() => void runQuitAction("cancel")}
+      />
     </>
   );
 }

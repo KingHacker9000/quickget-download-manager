@@ -34,3 +34,26 @@ export function formatEta(totalBytes?: number | null, downloadedBytes?: number |
   const remMinutes = minutes % 60;
   return `${hours}h ${remMinutes}m`;
 }
+
+export function formatEtaLabel(totalBytes?: number | null, downloadedBytes?: number | null, bytesPerSec?: number | null): string {
+  const eta = formatEta(totalBytes, downloadedBytes, bytesPerSec);
+  if (eta === "--") return "ETA: calculating...";
+  if (eta === "0s") return "ETA: finishing...";
+  return `ETA: ${eta} left`;
+}
+
+export function formatDuration(from?: string | null, to?: string | null): string {
+  if (!from) return "--";
+  const start = new Date(from);
+  if (Number.isNaN(start.getTime())) return "--";
+  const end = to ? new Date(to) : new Date();
+  if (Number.isNaN(end.getTime())) return "--";
+  let seconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  const remSeconds = seconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m ${remSeconds}s`;
+  if (minutes > 0) return `${minutes}m ${remSeconds}s`;
+  return `${remSeconds}s`;
+}
