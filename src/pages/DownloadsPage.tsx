@@ -3,8 +3,8 @@ import { AppShell } from "../components/AppShell";
 import { AddDownloadModal } from "../components/AddDownloadModal";
 import { CommandBar } from "../components/CommandBar";
 import { DownloadRow } from "../components/DownloadRow";
-import { SettingsPanel } from "../components/SettingsPanel";
 import type { NavItem } from "../components/Sidebar";
+import { SettingsPage } from "./SettingsPage";
 import type {
   AgentConnectionState,
   AgentStatus,
@@ -28,6 +28,9 @@ type Props = {
   settings: AppSettings | null;
   settingsBusy: boolean;
   onSettingsChange: (next: AppSettings) => void;
+  onRunProfiler: () => Promise<void>;
+  onRefreshProfilerStatus: () => Promise<void>;
+  onRestoreRecommended: () => void;
   forceShowDownloadsToken: number;
 };
 
@@ -83,6 +86,9 @@ export function DownloadsPage({
   settings,
   settingsBusy,
   onSettingsChange,
+  onRunProfiler,
+  onRefreshProfilerStatus,
+  onRestoreRecommended,
   forceShowDownloadsToken,
 }: Props) {
   const [activeSection, setActiveSection] = useState<NavItem>("Downloads");
@@ -204,12 +210,20 @@ export function DownloadsPage({
             open={modalOpen}
             canSubmit={agentState === "connected"}
             initialUrl={prefillUrl}
+            settings={settings}
             onClose={() => setModalOpen(false)}
             onSubmit={onCreateDownload}
           />
         </>
       ) : activeSection === "Settings" ? (
-        <SettingsPanel settings={settings} busy={settingsBusy} onChange={onSettingsChange} />
+        <SettingsPage
+          settings={settings}
+          busy={settingsBusy}
+          onChange={onSettingsChange}
+          onRunProfiler={onRunProfiler}
+          onRefreshProfilerStatus={onRefreshProfilerStatus}
+          onRestoreRecommended={onRestoreRecommended}
+        />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
           {activeSection} section is reserved for upcoming releases.

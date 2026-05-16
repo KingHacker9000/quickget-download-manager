@@ -28,7 +28,8 @@ pub fn run() {
       commands::has_active_downloads,
       commands::pause_all_downloads,
       commands::resume_all_downloads,
-      commands::show_main_window
+      commands::show_main_window,
+      commands::read_latest_profiler_recommendation
     ])
     .setup(|app| {
       if let Err(error) = tauri::async_runtime::block_on(agent::ensure_agent_running(app.handle()))
@@ -39,9 +40,12 @@ pub fn run() {
         let app_handle = app.handle().clone();
         main_window.on_window_event(move |event| {
           if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            if let Some(window) = app_handle.get_webview_window("main") {
-              let _ = window.hide();
+            let settings = settings::load_settings().unwrap_or_default();
+            if settings.minimize_to_tray_on_close {
+              api.prevent_close();
+              if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.hide();
+              }
             }
           }
         });

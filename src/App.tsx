@@ -9,11 +9,13 @@ import {
 } from "./types/agent";
 import {
   cancelDownload,
+  checkProfilerApiAvailable,
   connectEvents,
   createDownload,
   deleteDownload,
   listDownloads,
   pauseDownload,
+  runProfiler,
   resumeDownload,
 } from "./api/agentClient";
 import { getSettings, handleQuitAction, hasActiveDownloads, saveSettings } from "./api/settingsClient";
@@ -29,6 +31,15 @@ import { QuitConfirmModal } from "./components/QuitConfirmModal";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { Toasts, type ToastItem, type ToastTone } from "./components/Toasts";
 import type { AppSettings } from "./types/settings";
+import {
+  applyProfilerRecommendation,
+  GENTLE_RETRY_OPTIONS,
+  defaultSettings,
+  getEffectiveQuickGetOptions,
+  mergeWithDefaults,
+  setProfilerRecommendation,
+} from "./state/settingsStore";
+import { AGENT_EVENT_DOWNLOAD_FAILED } from "./types/agent";
 
 function getErrorMessage(error: unknown): string {
   if (typeof error === "string" && error.trim().length > 0) return error;
@@ -142,6 +153,15 @@ export default function App() {
               pushToast(message, "success");
               void notifyCompletion(message);
             }
+            if (event.type === AGENT_EVENT_DOWNLOAD_FAILED && event.snapshot && settings?.gentleRetryOnFailure) {
+              const s = event.snapshot;
+              void createDownload({
+                url: s.url ?? "",
+                output_dir: s.output_path ? s.output_path.replace(/[\\/][^\\/]+$/, "") : settings.defaultDownloadFolder ?? undefined,
+                filename: s.filename,
+                quickget_options: GENTLE_RETRY_OPTIONS,
+              }).then(upsertDownload).catch(() => {});
+            }
           },
           (message) => {
             setConnectionStatus("disconnected");
@@ -169,9 +189,10 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        setSettings(await getSettings());
+        setSettings(mergeWithDefaults(await getSettings()));
       } catch (error) {
         pushToast(`Failed to load settings: ${getErrorMessage(error)}`, "error");
+        setSettings(defaultSettings());
       }
     })();
   }, []);
@@ -237,19 +258,38 @@ export default function App() {
 
   const onCreateDownload = async (request: CreateDownloadRequest) => {
     try {
+      const activeSettings = settings ?? defaultSettings();
+      const effective = getEffectiveQuickGetOptions(activeSettings);
       let snapshot;
       try {
-        snapshot = await createDownload(request);
+        snapshot = await createDownload({
+          ...request,
+          output_dir: request.output_dir ?? activeSettings.defaultDownloadFolder ?? undefined,
+          quickget_options: {
+            ...effective,
+            headers: effective.headers,
+          },
+          headers: Object.keys(effective.headers).length > 0 ? effective.headers : request.headers,
+        });
       } catch (error) {
         const message = getErrorMessage(error).toLowerCase();
         const shouldRetryWithoutMetadata =
-          message.includes("invalid json body") && !!request.metadata && Object.keys(request.metadata).length > 0;
+          message.includes("invalid json body");
         if (!shouldRetryWithoutMetadata) throw error;
         snapshot = await createDownload({
           url: request.url,
-          output_dir: request.output_dir,
+          output_dir: request.output_dir ?? activeSettings.defaultDownloadFolder ?? undefined,
           filename: request.filename,
-          headers: request.headers,
+          headers: Object.keys(effective.headers).length > 0 ? effective.headers : request.headers,
+          quickget_options: {
+            connections: effective.connections,
+            queueMode: effective.queueMode,
+            segmentSize: effective.segmentSize,
+            bufferSize: effective.bufferSize,
+            retries: effective.retries,
+            autoBuffer: effective.autoBuffer,
+            http1: effective.http1,
+          },
         });
       }
       upsertDownload(snapshot);
@@ -312,12 +352,100 @@ export default function App() {
     try {
       setSettingsBusy(true);
       const persisted = await saveSettings(next);
-      setSettings(persisted);
+      setSettings(mergeWithDefaults(persisted));
     } catch (error) {
       pushToast(`Failed to save settings: ${getErrorMessage(error)}`, "error");
     } finally {
       setSettingsBusy(false);
     }
+  };
+
+  const onRefreshProfilerStatus = async () => {
+    const available = await checkProfilerApiAvailable();
+    if (!settings) return;
+    let recommendation = settings.profiler.recommendation;
+    let message = available ? "Profiler API detected." : "Profiler integration requires quickget-agent profiler API.";
+    if (!available) {
+      try {
+        const local = await invoke<Record<string, unknown>>("read_latest_profiler_recommendation");
+        recommendation = {
+          source: "manual",
+          generatedAt: new Date().toISOString(),
+          connections: Number(local.connections ?? settings.maxSimultaneousDownloads),
+          queueMode: Boolean(local.queueMode ?? true),
+          segmentSize: Number(local.segmentSize ?? settings.advanced.segmentSize),
+          bufferSize: Number(local.bufferSize ?? settings.advanced.bufferSize),
+          forceHttp1: Boolean(local.http1 ?? settings.advanced.forceHttp1),
+        };
+        message = "Loaded recommendation from local QuickGet profile summary.";
+      } catch {
+        // keep placeholder
+      }
+    }
+    const next: AppSettings = {
+      ...settings,
+      profiler: {
+        ...settings.profiler,
+        apiAvailable: available,
+        lastCheckedAt: new Date().toISOString(),
+        status: available || recommendation ? "ready" : "error",
+        recommendation,
+        message,
+      },
+    };
+    await onSettingsChange(next);
+  };
+
+  const onRunProfiler = async () => {
+    if (!settings) return;
+    await onSettingsChange({ ...settings, profiler: { ...settings.profiler, status: "running", message: "Running profiler..." } });
+    try {
+      const result = await runProfiler();
+      const recommendation = (result.recommendation as Record<string, unknown> | undefined) ?? null;
+      if (!recommendation) throw new Error("No recommendation returned by profiler API.");
+      setProfilerRecommendation({
+        source: "profiler",
+        generatedAt: new Date().toISOString(),
+        connections: Number(recommendation.connections ?? settings.maxSimultaneousDownloads),
+        queueMode: Boolean(recommendation.queueMode ?? true),
+        segmentSize: Number(recommendation.segmentSize ?? settings.advanced.segmentSize),
+        bufferSize: Number(recommendation.bufferSize ?? settings.advanced.bufferSize),
+        forceHttp1: Boolean(recommendation.http1 ?? settings.advanced.forceHttp1),
+      });
+      await onSettingsChange({
+        ...settings,
+        profiler: {
+          ...settings.profiler,
+          apiAvailable: true,
+          lastRunAt: new Date().toISOString(),
+          status: "ready",
+          message: "Profiler recommendation updated.",
+          recommendation: {
+            source: "profiler",
+            generatedAt: new Date().toISOString(),
+            connections: Number(recommendation.connections ?? settings.maxSimultaneousDownloads),
+            queueMode: Boolean(recommendation.queueMode ?? true),
+            segmentSize: Number(recommendation.segmentSize ?? settings.advanced.segmentSize),
+            bufferSize: Number(recommendation.bufferSize ?? settings.advanced.bufferSize),
+            forceHttp1: Boolean(recommendation.http1 ?? settings.advanced.forceHttp1),
+          },
+        },
+      });
+    } catch (error) {
+      await onSettingsChange({
+        ...settings,
+        profiler: {
+          ...settings.profiler,
+          status: "error",
+          message: getErrorMessage(error),
+        },
+      });
+    }
+  };
+
+  const onRestoreRecommended = () => {
+    if (!settings || !settings.profiler.recommendation) return;
+    void onSettingsChange(applyProfilerRecommendation(settings));
   };
 
   const runQuitAction = async (action: "pauseAndQuit" | "keepRunning" | "cancel") => {
@@ -349,6 +477,9 @@ export default function App() {
         settings={settings}
         settingsBusy={settingsBusy}
         onSettingsChange={onSettingsChange}
+        onRunProfiler={onRunProfiler}
+        onRefreshProfilerStatus={onRefreshProfilerStatus}
+        onRestoreRecommended={onRestoreRecommended}
         forceShowDownloadsToken={forceShowDownloadsToken}
       />
       <Toasts items={toasts} onDismiss={dismissToast} />

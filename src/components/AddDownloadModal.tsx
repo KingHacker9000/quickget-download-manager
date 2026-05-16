@@ -1,34 +1,30 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CreateDownloadRequest } from "../types/agent";
-
-type PresetMode = "Auto" | "Balanced" | "Aggressive" | "Gentle";
-
-const presetOptions: PresetMode[] = ["Auto", "Balanced", "Aggressive", "Gentle"];
+import type { AppSettings } from "../types/settings";
 
 type Props = {
   open: boolean;
   canSubmit: boolean;
   initialUrl?: string;
+  settings: AppSettings | null;
   onClose: () => void;
   onSubmit: (request: CreateDownloadRequest) => Promise<void>;
 };
 
-export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, onClose, onSubmit }: Props) {
+export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, settings, onClose, onSubmit }: Props) {
   const [url, setUrl] = useState("");
   const [outputDir, setOutputDir] = useState("");
   const [filename, setFilename] = useState("");
-  const [preset, setPreset] = useState<PresetMode>("Auto");
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [maxSimultaneous, setMaxSimultaneous] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setUrl(initialUrl ?? "");
+    setOutputDir(settings?.defaultDownloadFolder ?? "");
     setError(null);
-  }, [isOpen, initialUrl]);
+  }, [isOpen, initialUrl, settings?.defaultDownloadFolder]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -38,12 +34,6 @@ export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, onClose,
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isOpen, onClose]);
-
-  const parsedMax = useMemo(() => {
-    if (!maxSimultaneous.trim()) return undefined;
-    const parsed = Number.parseInt(maxSimultaneous, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-  }, [maxSimultaneous]);
 
   if (!isOpen) return null;
 
@@ -70,14 +60,6 @@ export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, onClose,
         url: url.trim(),
         output_dir: outputDir.trim() || undefined,
         filename: filename.trim() || undefined,
-        metadata:
-          preset !== "Auto" || parsedMax
-            ? {
-                ...(preset !== "Auto" ? { speed_mode: preset.toLowerCase() } : {}),
-                ...(parsedMax ? { max_simultaneous_downloads: parsedMax } : {}),
-                // TODO: Add future QuickGet advanced flags once represented in shared types.
-              }
-            : undefined,
       });
       onClose();
     } catch (submitError) {
@@ -124,41 +106,6 @@ export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, onClose,
             placeholder="Filename (optional)"
             className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-500 focus:ring"
           />
-
-          <select
-            value={preset}
-            onChange={(event) => setPreset(event.target.value as PresetMode)}
-            className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 focus:ring"
-          >
-            {presetOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-
-          <div className="rounded-xl border border-slate-700/80 bg-slate-950/40">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((current) => !current)}
-              className="flex w-full items-center justify-between px-3 py-2 text-sm font-medium text-slate-300"
-            >
-              Advanced options
-              <span>{showAdvanced ? "-" : "+"}</span>
-            </button>
-            {showAdvanced && (
-              <div className="border-t border-slate-700/70 px-3 py-3">
-                <input
-                  value={maxSimultaneous}
-                  onChange={(event) => setMaxSimultaneous(event.target.value)}
-                  type="number"
-                  min={1}
-                  placeholder="Max simultaneous / connection count"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-500 focus:ring"
-                />
-              </div>
-            )}
-          </div>
 
           {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">{error}</p>}
         </div>

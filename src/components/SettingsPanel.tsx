@@ -38,7 +38,7 @@ export function SettingsPanel({ settings, busy, onChange }: Props) {
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
           value={settings.speedMode}
           disabled={busy}
-          onChange={(e) => onChange({ ...settings, speedMode: e.target.value })}
+          onChange={(e) => onChange({ ...settings, speedMode: e.target.value as AppSettings["speedMode"] })}
         >
           <option value="gentle">Gentle</option>
           <option value="balanced">Balanced</option>

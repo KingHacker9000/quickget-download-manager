@@ -10,6 +10,14 @@ pub struct AppSettings {
   pub speed_mode: String,
   pub max_simultaneous_downloads: u32,
   pub notifications_enabled: bool,
+  #[serde(default = "default_minimize_to_tray_on_close")]
+  pub minimize_to_tray_on_close: bool,
+  #[serde(default = "default_gentle_retry_on_failure")]
+  pub gentle_retry_on_failure: bool,
+  #[serde(default)]
+  pub advanced: serde_json::Value,
+  #[serde(default)]
+  pub profiler: serde_json::Value,
 }
 
 impl Default for AppSettings {
@@ -20,8 +28,20 @@ impl Default for AppSettings {
       speed_mode: "balanced".to_string(),
       max_simultaneous_downloads: 8,
       notifications_enabled: true,
+      minimize_to_tray_on_close: true,
+      gentle_retry_on_failure: true,
+      advanced: serde_json::json!({}),
+      profiler: serde_json::json!({}),
     }
   }
+}
+
+fn default_minimize_to_tray_on_close() -> bool {
+  true
+}
+
+fn default_gentle_retry_on_failure() -> bool {
+  true
 }
 
 pub fn load_settings() -> Result<AppSettings, String> {

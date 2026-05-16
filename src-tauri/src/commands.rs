@@ -135,3 +135,50 @@ pub async fn resume_all_downloads() -> Result<(), String> {
 pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
   tray::show_main_window(&app).map_err(|e| e.to_string())
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalProfilerRecommendation {
+  pub connections: u32,
+  pub queue_mode: bool,
+  pub segment_size: u64,
+  pub buffer_size: u64,
+  pub http1: bool,
+}
+
+#[tauri::command]
+pub fn read_latest_profiler_recommendation() -> Result<LocalProfilerRecommendation, String> {
+  let cwd = std::env::current_dir().map_err(|e| format!("cwd error: {e}"))?;
+  let profiles_dir = cwd.join("..").join("QuickGet_CLI").join(".quickget").join("profiles");
+  let entries = std::fs::read_dir(&profiles_dir).map_err(|e| format!("profiles dir not found: {e}"))?;
+  let mut latest: Option<std::path::PathBuf> = None;
+  for entry in entries.flatten() {
+    let path = entry.path();
+    if path.is_dir() {
+      latest = match latest {
+        Some(current) => {
+          let path_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+          let current_name = current.file_name().and_then(|n| n.to_str()).unwrap_or("");
+          Some(if path_name > current_name { path } else { current })
+        }
+        None => Some(path),
+      };
+    }
+  }
+  let latest = latest.ok_or_else(|| "no profiler folders found".to_string())?;
+  let summary_path = latest.join("summary.csv");
+  let raw = std::fs::read_to_string(summary_path).map_err(|e| format!("summary.csv read failed: {e}"))?;
+  let mut lines = raw.lines();
+  let _ = lines.next();
+  let first = lines.next().ok_or_else(|| "summary.csv has no data rows".to_string())?;
+  let cols: Vec<&str> = first.split(',').collect();
+  if cols.len() < 8 {
+    return Err("summary.csv format is invalid".to_string());
+  }
+  let connections = cols[3].parse::<u32>().map_err(|e| format!("invalid connections: {e}"))?;
+  let queue_mode = cols[4].parse::<bool>().map_err(|e| format!("invalid queue_mode: {e}"))?;
+  let segment_size = cols[5].parse::<u64>().map_err(|e| format!("invalid segment_size: {e}"))?;
+  let buffer_size = cols[6].parse::<u64>().map_err(|e| format!("invalid buffer_size: {e}"))?;
+  let http1 = cols[7].trim().eq_ignore_ascii_case("http1");
+  Ok(LocalProfilerRecommendation { connections, queue_mode, segment_size, buffer_size, http1 })
+}

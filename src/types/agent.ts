@@ -16,6 +16,7 @@ export type CreateDownloadRequest = {
   filename?: string;
   headers?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  quickget_options?: Record<string, unknown>;
 };
 
 export type DownloadState =

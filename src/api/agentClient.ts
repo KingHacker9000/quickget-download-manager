@@ -16,11 +16,7 @@ const AGENT_FETCH_BASE = import.meta.env.DEV ? AGENT_DEV_PROXY_BASE : AGENT_BASE
 const HEALTH_PATH = "/health";
 const DOWNLOADS_PATH = "/downloads";
 const EVENTS_PATH = "/events";
-const DEV_DEFAULT_CONNECTIONS = 8;
-const DEV_DEFAULT_QUEUE_MODE = true;
-const DEV_DEFAULT_SEGMENT_SIZE = 4 * 1024 * 1024;
-const DEV_DEFAULT_BUFFER_SIZE = 256 * 1024;
-const DEV_DEFAULT_HTTP1 = true;
+const PROFILER_PATH = "/profiler";
 
 type EventCallback = (event: AgentEvent) => void;
 type ErrorCallback = (message: string) => void;
@@ -142,27 +138,32 @@ function parseAgentError(body: unknown): AgentErrorResponse | null {
 }
 
 function mapCreatePayload(payload: CreateDownloadRequest): Record<string, unknown> {
-  const meta = (payload.metadata ?? {}) as Record<string, unknown>;
+  const qg = (payload.quickget_options ?? {}) as Record<string, unknown>;
   const outputPath =
     payload.filename && payload.output_dir
       ? `${payload.output_dir.replace(/[\\/]$/, "")}/${payload.filename}`
       : payload.filename ?? undefined;
-  const speedMode = typeof meta.speed_mode === "string" ? meta.speed_mode : "auto";
-  const connectionsFromMeta =
-    typeof meta.max_simultaneous_downloads === "number" ? meta.max_simultaneous_downloads : undefined;
-  const presetConnections =
-    speedMode === "aggressive" ? 12 : speedMode === "balanced" ? 8 : speedMode === "gentle" ? 4 : DEV_DEFAULT_CONNECTIONS;
 
   return {
     url: payload.url,
     ...(outputPath ? { outputPath } : {}),
     ...(payload.output_dir ? { directory: payload.output_dir } : {}),
-    connections: connectionsFromMeta ?? presetConnections,
-    queueMode: DEV_DEFAULT_QUEUE_MODE,
-    segmentSize: DEV_DEFAULT_SEGMENT_SIZE,
-    bufferSize: DEV_DEFAULT_BUFFER_SIZE,
-    http1: DEV_DEFAULT_HTTP1,
+    ...(typeof qg.connections === "number" ? { connections: qg.connections } : {}),
+    ...(typeof qg.retries === "number" ? { retries: qg.retries } : {}),
+    ...(typeof qg.queueMode === "boolean" ? { queueMode: qg.queueMode } : {}),
+    ...(typeof qg.dynamic === "boolean" ? { dynamic: qg.dynamic } : {}),
+    ...(typeof qg.segmentSize === "number" ? { segmentSize: qg.segmentSize } : {}),
+    ...(typeof qg.bufferSize === "number" ? { bufferSize: qg.bufferSize } : {}),
+    ...(typeof qg.autoBuffer === "boolean" ? { autoBuffer: qg.autoBuffer } : {}),
+    ...(typeof qg.http1 === "boolean" ? { http1: qg.http1 } : {}),
+    ...(typeof qg.maxIdleConns === "number" ? { maxIdleConns: qg.maxIdleConns } : {}),
+    ...(typeof qg.idleTimeout === "number" ? { idleTimeout: qg.idleTimeout } : {}),
+    ...(typeof qg.minSplitSize === "number" ? { minSplitSize: qg.minSplitSize } : {}),
+    ...(typeof qg.minDynamicFileSize === "number" ? { minDynamicFileSize: qg.minDynamicFileSize } : {}),
+    ...(typeof qg.writeDisk === "string" && qg.writeDisk.trim() ? { writeDisk: qg.writeDisk } : {}),
+    ...(typeof qg.userAgent === "string" && qg.userAgent.trim() ? { userAgent: qg.userAgent } : {}),
     ...(payload.headers ? { headers: payload.headers } : {}),
+    ...(typeof qg.headers === "object" && qg.headers ? { headers: qg.headers } : {}),
   };
 }
 
@@ -272,6 +273,22 @@ export async function deleteDownload(id: string, deleteFiles = false): Promise<v
   await request<void>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/delete`, {
     method: "POST",
     ...(deleteFiles ? { body: JSON.stringify({ delete_files: true }) } : {}),
+  });
+}
+
+export async function checkProfilerApiAvailable(): Promise<boolean> {
+  try {
+    await request<Record<string, unknown>>(PROFILER_PATH, { method: "GET" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function runProfiler(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`${PROFILER_PATH}/run`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 
