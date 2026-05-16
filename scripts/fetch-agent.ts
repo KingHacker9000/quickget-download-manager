@@ -55,12 +55,12 @@ async function findFileRecursive(root: string, targetNames: string[]): Promise<s
   return null;
 }
 
-async function downloadFromGithub(config: QdmConfig, info: PlatformInfo, outPath: string): Promise<void> {
+async function downloadFromGithub(config: QdmConfig, info: PlatformInfo, outPath: string): Promise<{ releaseTag: string; assetName: string }> {
   const releasePath = config.quickgetAgentVersion === "latest" ? "latest" : `tags/${config.quickgetAgentVersion}`;
   const url = `https://api.github.com/repos/${config.quickgetRepo}/releases/${releasePath}`;
   const releaseRes = await fetch(url, { headers: { "User-Agent": "qdm-fetch-agent" } });
   if (!releaseRes.ok) throw new Error(`Failed to fetch release metadata (${releaseRes.status})`);
-  const release = (await releaseRes.json()) as { assets: Array<{ browser_download_url: string; name: string }> };
+  const release = (await releaseRes.json()) as { tag_name?: string; assets: Array<{ browser_download_url: string; name: string }> };
 
   const asset = release.assets.find((a) => {
     const n = a.name.toLowerCase();
@@ -87,6 +87,7 @@ async function downloadFromGithub(config: QdmConfig, info: PlatformInfo, outPath
   } else {
     await copyFile(archivePath, outPath);
   }
+  return { releaseTag: release.tag_name ?? config.quickgetAgentVersion, assetName: asset.name };
 }
 
 async function main() {
@@ -96,15 +97,38 @@ async function main() {
   await mkdir(dirname(outPath), { recursive: true });
 
   const usedLocal = await copyLocalAgent(info, outPath);
-  if (!usedLocal) await downloadFromGithub(config, info, outPath);
+  let source = "local";
+  let releaseTag = "local";
+  let assetName = info.localAgentName;
+  if (!usedLocal) {
+    const downloadMeta = await downloadFromGithub(config, info, outPath);
+    source = "github";
+    releaseTag = downloadMeta.releaseTag;
+    assetName = downloadMeta.assetName;
+  }
   if (process.platform !== "win32") await chmod(outPath, 0o755);
+
+  await writeFile(
+    resolve("src-tauri", "binaries", "quickget-agent.meta.json"),
+    JSON.stringify(
+      {
+        source,
+        releaseTag,
+        assetName,
+        fetchedAt: new Date().toISOString(),
+        configuredVersion: config.quickgetAgentVersion,
+      },
+      null,
+      2,
+    ),
+  );
 
   await writeFile(resolve("src", "api", "agentConfig.ts"), `export const AGENT_HOST = "${config.agentHost}";\nexport const AGENT_PORT = ${config.agentPort};\n`);
   await writeFile(
     resolve("src-tauri", "src", "agent_config.rs"),
     `pub const AGENT_HOST: &str = "${config.agentHost}";\npub const AGENT_PORT: u16 = ${config.agentPort};\n`,
   );
-  console.log(`quickget-agent ready at ${basename(outPath)} (${usedLocal ? "local" : "github"})`);
+  console.log(`quickget-agent ready at ${basename(outPath)} (${source}) tag=${releaseTag} asset=${assetName}`);
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });

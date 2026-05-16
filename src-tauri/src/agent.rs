@@ -19,6 +19,8 @@ pub struct AgentStatus {
   pub base_url: String,
   pub version: Option<String>,
   pub api_version: Option<String>,
+  pub build_commit: Option<String>,
+  pub build_date: Option<String>,
   pub message: String,
 }
 
@@ -26,6 +28,8 @@ pub struct AgentStatus {
 struct HealthResponse {
   version: Option<String>,
   api_version: Option<String>,
+  build_commit: Option<String>,
+  build_date: Option<String>,
 }
 
 pub struct AgentManager {
@@ -48,6 +52,8 @@ pub async fn get_agent_status() -> Result<AgentStatus, String> {
       base_url: agent_base_url(),
       version: None,
       api_version: None,
+      build_commit: None,
+      build_date: None,
       message: "agent offline".to_string(),
     }),
   }
@@ -139,6 +145,8 @@ fn to_connected_status(health: HealthResponse, message: String) -> AgentStatus {
     base_url: agent_base_url(),
     version: health.version,
     api_version: health.api_version,
+    build_commit: health.build_commit,
+    build_date: health.build_date,
     message,
   }
 }

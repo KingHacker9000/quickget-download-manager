@@ -6,6 +6,7 @@ import type {
   AgentStatus,
   CreateDownloadRequest,
   DownloadSnapshot,
+  SegmentProgress,
 } from "../types/agent";
 
 export const AGENT_BASE_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
@@ -18,6 +19,8 @@ const EVENTS_PATH = "/events";
 
 type EventCallback = (event: AgentEvent) => void;
 type ErrorCallback = (message: string) => void;
+type AgentApiDownload = Record<string, unknown>;
+type AgentApiEvent = Record<string, unknown>;
 
 let cachedToken: string | null = null;
 
@@ -27,15 +30,132 @@ function toErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizePercent(value: number | undefined): number | undefined {
+  if (value == null) return undefined;
+  return value <= 1 ? value * 100 : value;
+}
+
+function mapStatus(status: string | undefined): DownloadSnapshot["state"] {
+  if (!status) return "queued";
+  switch (status.toLowerCase()) {
+    case "queued":
+      return "queued";
+    case "starting":
+      return "starting";
+    case "running":
+    case "downloading":
+      return "downloading";
+    case "paused":
+      return "paused";
+    case "completed":
+      return "completed";
+    case "cancelled":
+      return "cancelled";
+    case "failed":
+      return "failed";
+    default:
+      return "queued";
+  }
+}
+
+function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
+  const outputPath = asString(raw.outputPath);
+  const speedMBps = asNumber(raw.speedMBps);
+  const rawSegments = Array.isArray(raw.segments) ? raw.segments : [];
+  const segments: SegmentProgress[] = rawSegments
+    .map((entry): SegmentProgress | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const seg = entry as Record<string, unknown>;
+      const index = asNumber(seg.index);
+      const startByte = asNumber(seg.startByte);
+      const endByte = asNumber(seg.endByte);
+      const downloadedWithin = asNumber(seg.downloadedBytesWithinSegment);
+      const status = asString(seg.status);
+      if (
+        index == null ||
+        startByte == null ||
+        endByte == null ||
+        downloadedWithin == null ||
+        status == null
+      ) {
+        return null;
+      }
+      return {
+        index,
+        start_byte: startByte,
+        end_byte: endByte,
+        downloaded_bytes_within_segment: downloadedWithin,
+        status,
+        worker_id: asNumber(seg.workerId),
+      };
+    })
+    .filter((segment): segment is SegmentProgress => segment != null);
+
+  return {
+    id: asString(raw.id) ?? "",
+    url: asString(raw.url),
+    filename: outputPath?.split(/[\\/]/).pop(),
+    output_path: outputPath,
+    state: mapStatus(asString(raw.status)),
+    total_bytes: asNumber(raw.total),
+    downloaded_bytes: asNumber(raw.downloaded),
+    speed_bytes_per_sec: speedMBps != null ? speedMBps * 1024 * 1024 : undefined,
+    progress_percent: normalizePercent(asNumber(raw.percent)),
+    warning: undefined,
+    error: asString(raw.error),
+    created_at: asString(raw.createdAt),
+    updated_at: asString(raw.updatedAt),
+    completed_at: asString(raw.completedAt) ?? null,
+    connections: asNumber(raw.connections),
+    active_jobs: asNumber(raw.activeJobs),
+    mutations: asNumber(raw.mutations),
+    segments,
+  };
+}
+
 function parseAgentError(body: unknown): AgentErrorResponse | null {
   if (!body || typeof body !== "object") return null;
   const obj = body as Record<string, unknown>;
-  const message = typeof obj.message === "string" ? obj.message : null;
-  const code = typeof obj.code === "string" ? obj.code : undefined;
-  const details = obj.details;
+  const nestedError = obj.error && typeof obj.error === "object" ? (obj.error as Record<string, unknown>) : null;
+  const message =
+    asString(obj.message) ??
+    (nestedError ? asString(nestedError.message) : undefined) ??
+    asString(obj.error) ??
+    asString(obj.detail) ??
+    null;
+  const code = asString(obj.code) ?? (nestedError ? asString(nestedError.code) : undefined);
+  const details = obj.details ?? obj.errors ?? obj.detail ?? nestedError;
   return message ? { code, message, details } : null;
 }
 
+function mapCreatePayload(payload: CreateDownloadRequest): Record<string, unknown> {
+  const meta = (payload.metadata ?? {}) as Record<string, unknown>;
+  const outputPath =
+    payload.filename && payload.output_dir
+      ? `${payload.output_dir.replace(/[\\/]$/, "")}/${payload.filename}`
+      : payload.filename ?? undefined;
+  const speedMode = typeof meta.speed_mode === "string" ? meta.speed_mode : "auto";
+  const connectionsFromMeta =
+    typeof meta.max_simultaneous_downloads === "number" ? meta.max_simultaneous_downloads : undefined;
+  const presetConnections =
+    speedMode === "aggressive" ? 12 : speedMode === "balanced" ? 8 : speedMode === "gentle" ? 4 : undefined;
+
+  return {
+    url: payload.url,
+    ...(outputPath ? { outputPath } : {}),
+    ...(payload.output_dir ? { directory: payload.output_dir } : {}),
+    ...(connectionsFromMeta ?? presetConnections ? { connections: connectionsFromMeta ?? presetConnections } : {}),
+    ...(payload.headers ? { headers: payload.headers } : {}),
+  };
+}
 
 async function getToken(): Promise<string> {
   if (cachedToken) return cachedToken;
@@ -72,11 +192,22 @@ async function request<T>(path: string, init: RequestInit = {}, requireAuth = tr
     }
     let friendly = `Request failed (${res.status})`;
     try {
-      const body = await res.json();
-      const agentError = parseAgentError(body);
-      if (agentError?.message) friendly = agentError.message;
+      const raw = await res.text();
+      if (raw.trim().length > 0) {
+        try {
+          const body = JSON.parse(raw) as unknown;
+          const agentError = parseAgentError(body);
+          if (agentError?.message) {
+            friendly = agentError.message;
+          } else {
+            friendly = raw;
+          }
+        } catch {
+          friendly = raw;
+        }
+      }
     } catch {
-      // keep friendly fallback
+      // keep fallback
     }
     throw new Error(friendly);
   }
@@ -90,35 +221,49 @@ export async function health(): Promise<AgentStatus> {
 }
 
 export async function listDownloads(): Promise<DownloadSnapshot[]> {
-  return request<DownloadSnapshot[]>(DOWNLOADS_PATH, { method: "GET" });
+  const response = await request<AgentApiDownload[]>(DOWNLOADS_PATH, { method: "GET" });
+  return response.map((item) => normalizeSnapshot(item));
 }
 
 export async function createDownload(payload: CreateDownloadRequest): Promise<DownloadSnapshot> {
-  return request<DownloadSnapshot>(DOWNLOADS_PATH, {
+  const response = await request<AgentApiDownload>(DOWNLOADS_PATH, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(mapCreatePayload(payload)),
   });
+  return normalizeSnapshot(response);
 }
 
 export async function getDownload(id: string): Promise<DownloadSnapshot> {
-  return request<DownloadSnapshot>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}`, { method: "GET" });
+  const response = await request<AgentApiDownload>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}`, { method: "GET" });
+  return normalizeSnapshot(response);
 }
 
 export async function pauseDownload(id: string): Promise<DownloadSnapshot> {
-  return request<DownloadSnapshot>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/pause`, { method: "POST" });
+  const response = await request<AgentApiDownload>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/pause`, {
+    method: "POST",
+  });
+  return normalizeSnapshot(response);
 }
 
 export async function resumeDownload(id: string): Promise<DownloadSnapshot> {
-  return request<DownloadSnapshot>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/resume`, { method: "POST" });
+  const response = await request<AgentApiDownload>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/resume`, {
+    method: "POST",
+  });
+  return normalizeSnapshot(response);
 }
 
 export async function cancelDownload(id: string): Promise<DownloadSnapshot> {
-  return request<DownloadSnapshot>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  const response = await request<AgentApiDownload>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+  return normalizeSnapshot(response);
 }
 
 export async function deleteDownload(id: string, deleteFiles = false): Promise<void> {
-  const suffix = deleteFiles ? "?delete_files=true" : "";
-  await request<void>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}${suffix}`, { method: "DELETE" });
+  await request<void>(`${DOWNLOADS_PATH}/${encodeURIComponent(id)}/delete`, {
+    method: "POST",
+    ...(deleteFiles ? { body: JSON.stringify({ delete_files: true }) } : {}),
+  });
 }
 
 function parseSseFrames(chunk: string): string[] {
@@ -145,12 +290,22 @@ function parseSseEvent(frame: string): AgentEvent | null {
   const payload = dataLines.join("\n");
 
   try {
-    const raw = JSON.parse(payload) as Record<string, unknown>;
+    const raw = JSON.parse(payload) as AgentApiEvent;
+    const eventId = asString(raw.id);
+    const snapshot =
+      eventId != null
+        ? normalizeSnapshot({
+            ...raw,
+            id: eventId,
+            updatedAt: raw.updatedAt ?? raw.timestamp,
+          } as AgentApiDownload)
+        : undefined;
+
     return {
       type: typeof raw.type === "string" ? raw.type : "unknown",
-      download_id: typeof raw.download_id === "string" ? raw.download_id : undefined,
+      download_id: eventId ?? (typeof raw.download_id === "string" ? raw.download_id : undefined),
       timestamp: typeof raw.timestamp === "string" ? raw.timestamp : undefined,
-      snapshot: (raw.snapshot as DownloadSnapshot | undefined) ?? undefined,
+      snapshot,
       message: typeof raw.message === "string" ? raw.message : undefined,
       data: (raw.data as Record<string, unknown> | undefined) ?? undefined,
     };
@@ -164,6 +319,13 @@ export function connectEvents(onEvent: EventCallback, onError?: ErrorCallback): 
   let abortController: AbortController | null = null;
   let reconnectHandle: number | null = null;
   let reconnectDelayMs = 1000;
+  const debugProgressEnabled =
+    import.meta.env.DEV &&
+    String((import.meta.env as Record<string, unknown>).QDM_DEBUG_PROGRESS ?? import.meta.env.VITE_QDM_DEBUG_PROGRESS ?? "") === "1";
+  let progressEventsThisSecond = 0;
+  let debugProgressWindowStart = Date.now();
+  const debugLastDownloaded = new Map<string, number>();
+  let debugSampleCount = 0;
 
   const scheduleReconnect = () => {
     if (aborted) return;
@@ -208,7 +370,37 @@ export function connectEvents(onEvent: EventCallback, onError?: ErrorCallback): 
         const frames = parseSseFrames(complete);
         for (const frame of frames) {
           const event = parseSseEvent(frame);
-          if (event) onEvent(event);
+          if (!event) continue;
+          if (debugProgressEnabled && event.type === "download.progress") {
+            progressEventsThisSecond += 1;
+            if (debugSampleCount < 5) {
+              console.debug("[QDM] progress sample", {
+                id: event.download_id,
+                downloaded: event.snapshot?.downloaded_bytes,
+                total: event.snapshot?.total_bytes,
+                segments: event.snapshot?.segments?.length ?? 0,
+                firstSegment: event.snapshot?.segments?.[0],
+              });
+              debugSampleCount += 1;
+            }
+            const now = Date.now();
+            const id = event.download_id ?? "";
+            const downloaded = event.snapshot?.downloaded_bytes ?? 0;
+            const prevDownloaded = debugLastDownloaded.get(id) ?? downloaded;
+            const delta = downloaded >= prevDownloaded ? downloaded - prevDownloaded : 0;
+            debugLastDownloaded.set(id, downloaded);
+            if (now-debugProgressWindowStart >= 1000) {
+              console.debug(`[QDM] download.progress events/sec: ${progressEventsThisSecond}`, {
+                id: event.download_id,
+                segmentCount: event.snapshot?.segments?.length ?? 0,
+                downloadedDeltaBytes: delta,
+                timestamp: new Date().toISOString(),
+              });
+              progressEventsThisSecond = 0;
+              debugProgressWindowStart = now;
+            }
+          }
+          onEvent(event);
         }
       }
     } catch (error) {

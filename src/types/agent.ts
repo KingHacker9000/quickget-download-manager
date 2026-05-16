@@ -3,6 +3,8 @@ export type AgentStatus = {
   base_url: string;
   version?: string | null;
   api_version?: string | null;
+  build_commit?: string | null;
+  build_date?: string | null;
   message: string;
 };
 
@@ -42,6 +44,19 @@ export type DownloadSnapshot = {
   updated_at?: string;
   completed_at?: string | null;
   metadata?: Record<string, unknown>;
+  connections?: number;
+  active_jobs?: number;
+  mutations?: number;
+  segments?: SegmentProgress[];
+};
+
+export type SegmentProgress = {
+  index: number;
+  start_byte: number;
+  end_byte: number;
+  downloaded_bytes_within_segment: number;
+  status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled" | string;
+  worker_id?: number;
 };
 
 export type AgentErrorResponse = {

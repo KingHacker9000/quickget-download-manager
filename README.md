@@ -23,6 +23,11 @@ Fetch and prepare a bundled sidecar agent binary:
 npm run fetch-agent
 ```
 
+`fetch-agent` writes sidecar metadata to:
+- `src-tauri/binaries/quickget-agent.meta.json`
+
+This file records source (`local` or `github`), resolved tag, asset name, and fetch timestamp.
+
 Use local sibling backend binary instead of GitHub Releases:
 
 ```bash
@@ -52,3 +57,13 @@ Create a production desktop build:
 ```bash
 npm run tauri:build
 ```
+
+## Verifying agent version in app
+
+1. Run `npm run fetch-agent`.
+2. Check `src-tauri/binaries/quickget-agent.meta.json` for the resolved release tag.
+3. Start QDM and confirm:
+   - Connection badge text includes `v<agent-version>`
+   - Dev console logs `[QDM] quickget-agent connected` with `version`, `apiVersion`, `buildCommit`, `buildDate`.
+
+To pin a specific release instead of `latest`, set `quickgetAgentVersion` in `qdm.config.json` to your tag (for example `v1.2.3`) before running `npm run fetch-agent`.

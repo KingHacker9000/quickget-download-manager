@@ -1,0 +1,204 @@
+import { useEffect, useMemo, useState } from "react";
+import { AppShell } from "../components/AppShell";
+import { AddDownloadModal } from "../components/AddDownloadModal";
+import { CommandBar } from "../components/CommandBar";
+import { DownloadRow } from "../components/DownloadRow";
+import type { NavItem } from "../components/Sidebar";
+import type {
+  AgentConnectionState,
+  AgentStatus,
+  CreateDownloadRequest,
+  DownloadSnapshot,
+} from "../types/agent";
+
+type Props = {
+  agentState: AgentConnectionState;
+  agentStatus: AgentStatus | null;
+  errorMessage: string | null;
+  activeDownloads: DownloadSnapshot[];
+  completedDownloads: DownloadSnapshot[];
+  busyIds: Set<string>;
+  onCreateDownload: (request: CreateDownloadRequest) => Promise<void>;
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+  onCancel: (id: string) => void;
+  onDelete: (id: string) => void;
+};
+
+function connectionText(state: AgentConnectionState, status: AgentStatus | null): string {
+  if (state === "connected") {
+    const version = status?.version ? ` v${status.version}` : "";
+    return `Connected: ${status?.base_url ?? "quickget-agent"}${version}`;
+  }
+  if (state === "starting") return "Connecting...";
+  if (state === "failed") return "Connection failed";
+  return "Disconnected";
+}
+
+function connectionBadgeClass(state: AgentConnectionState): string {
+  if (state === "connected") return "border-emerald-400/40 bg-emerald-500/20 text-emerald-200";
+  if (state === "starting") return "border-blue-400/40 bg-blue-500/20 text-blue-200";
+  if (state === "disconnected") return "border-amber-400/40 bg-amber-500/20 text-amber-200";
+  return "border-rose-400/40 bg-rose-500/20 text-rose-200";
+}
+
+function mapFriendlyError(message: string | null): string | null {
+  if (!message) return null;
+  const lower = message.toLowerCase();
+  if (lower.includes("429") || lower.includes("rate")) return "Server rate-limited this request. Try again shortly.";
+  if (lower.includes("range") && lower.includes("unsupported")) return "Range not supported by source. Using fallback path.";
+  if (lower.includes("disk") || lower.includes("write") || lower.includes("file")) return "Disk/file write error. Check permissions and free space.";
+  if (lower.includes("network") || lower.includes("timed out") || lower.includes("fetch")) return "Network request failed. Check connectivity.";
+  if (lower.includes("disconnected") || lower.includes("unable to connect")) return "quickget-agent disconnected.";
+  return message;
+}
+
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-4">
+      <p className="text-sm font-medium text-slate-200">{title}</p>
+      <p className="mt-1 text-xs text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
+export function DownloadsPage({
+  agentState,
+  agentStatus,
+  errorMessage,
+  activeDownloads,
+  completedDownloads,
+  busyIds,
+  onCreateDownload,
+  onPause,
+  onResume,
+  onCancel,
+  onDelete,
+}: Props) {
+  const [activeSection, setActiveSection] = useState<NavItem>("Downloads");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
+  const [completedOpen, setCompletedOpen] = useState(false);
+
+  const friendlyError = mapFriendlyError(errorMessage);
+
+  const canShowDownloads = useMemo(() => activeSection === "Downloads", [activeSection]);
+
+  const openAddModal = (url?: string) => {
+    setPrefillUrl(url);
+    setModalOpen(true);
+  };
+
+  useEffect(() => {
+    const onKeyDown = async (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setModalOpen(false);
+        return;
+      }
+
+      const isPasteShortcut = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v";
+      if (!isPasteShortcut) return;
+
+      try {
+        const text = await navigator.clipboard.readText();
+        const trimmed = text.trim();
+        if (!/^https?:\/\//i.test(trimmed)) return;
+        openAddModal(trimmed);
+      } catch {
+        // Clipboard access may be unavailable in some environments.
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  return (
+    <AppShell activeSection={activeSection} onSectionChange={setActiveSection}>
+      <header className="mb-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-100">Downloads</h1>
+          <p className="text-xs text-slate-400">Modern QuickGet desktop workflow</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${connectionBadgeClass(agentState)}`}>
+            {agentState}
+          </span>
+          <span className="text-xs text-slate-400">{connectionText(agentState, agentStatus)}</span>
+        </div>
+      </header>
+
+      {friendlyError && <div className="mb-3 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{friendlyError}</div>}
+
+      {canShowDownloads ? (
+        <>
+          <CommandBar onOpenAdd={openAddModal} />
+
+          <section className="space-y-2">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Active</h2>
+              <span className="text-xs text-slate-500">{activeDownloads.length}</span>
+            </div>
+            {activeDownloads.length === 0 ? (
+              <EmptyState title="No active downloads" hint="Paste a URL above or press Ctrl+V to add one." />
+            ) : (
+              activeDownloads.map((download) => (
+                <DownloadRow
+                  key={download.id}
+                  download={download}
+                  busy={busyIds.has(download.id)}
+                  onPause={onPause}
+                  onResume={onResume}
+                  onCancel={onCancel}
+                  onDelete={onDelete}
+                />
+              ))
+            )}
+          </section>
+
+          <section className="mt-5">
+            <button
+              type="button"
+              onClick={() => setCompletedOpen((current) => !current)}
+              className="mb-2 flex w-full items-center justify-between rounded-xl border border-slate-700/70 bg-slate-800/40 px-3 py-2 text-left"
+            >
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Completed</span>
+              <span className="text-xs text-slate-500">{completedDownloads.length} {completedOpen ? "-" : "+"}</span>
+            </button>
+            {completedOpen &&
+              (completedDownloads.length === 0 ? (
+                <EmptyState title="No completed downloads" hint="Finished files appear here." />
+              ) : (
+                <div className="space-y-2">
+                  {completedDownloads.map((download) => (
+                    <DownloadRow
+                      key={download.id}
+                      download={download}
+                      isCompleted
+                      busy={busyIds.has(download.id)}
+                      onPause={onPause}
+                      onResume={onResume}
+                      onCancel={onCancel}
+                      onDelete={onDelete}
+                    />
+                  ))}
+                </div>
+              ))}
+          </section>
+
+          <AddDownloadModal
+            open={modalOpen}
+            canSubmit={agentState === "connected"}
+            initialUrl={prefillUrl}
+            onClose={() => setModalOpen(false)}
+            onSubmit={onCreateDownload}
+          />
+        </>
+      ) : (
+        <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
+          {activeSection} section is reserved for upcoming releases.
+        </div>
+      )}
+    </AppShell>
+  );
+}
