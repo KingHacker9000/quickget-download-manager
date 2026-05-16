@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/agentclient.ts","./src/api/agentconfig.ts","./src/components/connectionbadge.tsx","./src/pages/homepage.tsx","./src/state/appstate.ts","./src/state/downloadsstore.ts","./src/types/agent.ts","./src/utils/format.ts","./src/utils/noop.ts"],"version":"5.9.3"}

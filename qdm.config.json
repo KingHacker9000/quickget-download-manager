@@ -1,0 +1,6 @@
+{
+  "quickgetRepo": "KingHacker9000/quickget",
+  "quickgetAgentVersion": "latest",
+  "agentPort": 19329,
+  "agentHost": "127.0.0.1"
+}
