@@ -75,6 +75,12 @@ export const AGENT_EVENT_DOWNLOAD_PAUSED = "download.paused";
 export const AGENT_EVENT_DOWNLOAD_CANCELLED = "download.cancelled";
 export const AGENT_EVENT_DOWNLOAD_COMPLETED = "download.completed";
 export const AGENT_EVENT_DOWNLOAD_FAILED = "download.failed";
+export const AGENT_EVENT_PROFILER_STARTED = "profiler.started";
+export const AGENT_EVENT_PROFILER_STAGE = "profiler.stage";
+export const AGENT_EVENT_PROFILER_LOG = "profiler.log";
+export const AGENT_EVENT_PROFILER_COMPLETED = "profiler.completed";
+export const AGENT_EVENT_PROFILER_FAILED = "profiler.failed";
+export const AGENT_EVENT_PROFILER_CANCELLED = "profiler.cancelled";
 
 export type AgentEventType =
   | typeof AGENT_EVENT_READY

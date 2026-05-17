@@ -1,3 +1,4 @@
+import type { RunProfilerRequest } from "../api/agentClient";
 import { SettingsSection } from "./SettingsSection";
 import type { AppSettings, EffectiveQuickGetOptions } from "../types/settings";
 
@@ -5,11 +6,12 @@ type Props = {
   settings: AppSettings;
   effective: EffectiveQuickGetOptions | null;
   busy?: boolean;
-  onRunProfiler: () => Promise<void>;
+  onRunProfiler: (request?: RunProfilerRequest) => Promise<void>;
   onRefreshStatus: () => Promise<void>;
+  onOpenProfilerTab?: () => void;
 };
 
-export function ProfilerPanel({ settings, effective, busy, onRunProfiler, onRefreshStatus }: Props) {
+export function ProfilerPanel({ settings, effective, busy, onRunProfiler, onRefreshStatus, onOpenProfilerTab }: Props) {
   const profiler = settings.profiler;
 
   return (
@@ -26,6 +28,11 @@ export function ProfilerPanel({ settings, effective, busy, onRunProfiler, onRefr
         <button type="button" disabled={busy || profiler.apiAvailable === false || profiler.status === "running"} className="rounded-lg border border-cyan-600/60 px-3 py-2 text-xs text-cyan-200 disabled:opacity-50" onClick={() => void onRunProfiler()}>
           {profiler.status === "running" ? "Running..." : "Run profiler"}
         </button>
+        {onOpenProfilerTab ? (
+          <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-200" onClick={onOpenProfilerTab}>
+            Open Profiler Tab
+          </button>
+        ) : null}
       </div>
       {profiler.message ? <p className="text-xs text-slate-400">{profiler.message}</p> : null}
       {effective ? (

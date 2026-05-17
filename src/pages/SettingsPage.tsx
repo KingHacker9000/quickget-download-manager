@@ -9,18 +9,20 @@ import {
   resetSettingsDefaults,
   validateAdvancedSettings,
 } from "../state/settingsStore";
+import type { RunProfilerRequest } from "../api/agentClient";
 import type { AppSettings } from "../types/settings";
 
 type Props = {
   settings: AppSettings | null;
   busy: boolean;
   onChange: (next: AppSettings) => void;
-  onRunProfiler: () => Promise<void>;
+  onRunProfiler: (request?: RunProfilerRequest) => Promise<void>;
   onRefreshProfilerStatus: () => Promise<void>;
   onRestoreRecommended: () => void;
+  onOpenProfilerTab?: () => void;
 };
 
-export function SettingsPage({ settings, busy, onChange, onRunProfiler, onRefreshProfilerStatus, onRestoreRecommended }: Props) {
+export function SettingsPage({ settings, busy, onChange, onRunProfiler, onRefreshProfilerStatus, onRestoreRecommended, onOpenProfilerTab }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const errors = useMemo(() => (settings ? validateAdvancedSettings(settings) : {}), [settings]);
@@ -86,6 +88,7 @@ export function SettingsPage({ settings, busy, onChange, onRunProfiler, onRefres
         busy={busy}
         onRunProfiler={onRunProfiler}
         onRefreshStatus={onRefreshProfilerStatus}
+        onOpenProfilerTab={onOpenProfilerTab}
       />
 
       <SettingsSection title="Advanced" description="Raw QuickGet flags for power users.">

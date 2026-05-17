@@ -39,6 +39,17 @@ export type ProfilerState = {
   lastRunAt: string | null;
   status: "idle" | "running" | "ready" | "error";
   message?: string;
+  runId?: string | null;
+  liveStage?: string | null;
+  liveStepIndex?: number | null;
+  liveStepTotal?: number | null;
+  liveLogs?: string[];
+  lastError?: string | null;
+  artifacts?: {
+    profileDir?: string;
+    rawCsv?: string;
+    summaryCsv?: string;
+  } | null;
   recommendation: QuickGetProfilerRecommendation | null;
 };
 

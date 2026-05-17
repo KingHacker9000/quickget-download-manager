@@ -8,14 +8,17 @@ import {
   type CreateDownloadRequest,
 } from "./types/agent";
 import {
+  cancelProfilerRun,
   cancelDownload,
   checkProfilerApiAvailable,
   connectEvents,
   createDownload,
   deleteDownload,
+  getProfilerStatus,
   listDownloads,
   pauseDownload,
   runProfiler,
+  type RunProfilerRequest,
   resumeDownload,
 } from "./api/agentClient";
 import { getSettings, handleQuitAction, hasActiveDownloads, saveSettings } from "./api/settingsClient";
@@ -37,7 +40,6 @@ import {
   defaultSettings,
   getEffectiveQuickGetOptions,
   mergeWithDefaults,
-  setProfilerRecommendation,
 } from "./state/settingsStore";
 import { AGENT_EVENT_DOWNLOAD_FAILED } from "./types/agent";
 
@@ -161,6 +163,103 @@ export default function App() {
                 filename: s.filename,
                 quickget_options: GENTLE_RETRY_OPTIONS,
               }).then(upsertDownload).catch(() => {});
+            }
+
+            if (event.type.startsWith("profiler.")) {
+              const data = event.data ?? {};
+              const msg = (typeof data.message === "string" && data.message) || event.message || "";
+              setSettings((prev) => {
+                if (!prev) return prev;
+                const logs = prev.profiler.liveLogs ?? [];
+                if (event.type === "profiler.started") {
+                  return {
+                    ...prev,
+                    profiler: {
+                      ...prev.profiler,
+                      apiAvailable: true,
+                      status: "running",
+                      runId: typeof data.run_id === "string" ? data.run_id : prev.profiler.runId ?? null,
+                      liveStage: "prepare",
+                      liveStepIndex: 0,
+                      liveStepTotal: null,
+                      liveLogs: [],
+                      lastError: null,
+                      message: msg || "Profiler started.",
+                    },
+                  };
+                }
+                if (event.type === "profiler.stage" || event.type === "profiler.log") {
+                  const nextLogs = event.type === "profiler.log" && msg ? [...logs, msg].slice(-200) : logs;
+                  return {
+                    ...prev,
+                    profiler: {
+                      ...prev.profiler,
+                      status: "running",
+                      runId: typeof data.run_id === "string" ? data.run_id : prev.profiler.runId ?? null,
+                      liveStage: typeof data.stage === "string" ? data.stage : prev.profiler.liveStage ?? null,
+                      liveStepIndex: typeof data.step_index === "number" ? data.step_index : prev.profiler.liveStepIndex ?? null,
+                      liveStepTotal: typeof data.step_total === "number" ? data.step_total : prev.profiler.liveStepTotal ?? null,
+                      liveLogs: nextLogs,
+                      message: msg || prev.profiler.message,
+                    },
+                  };
+                }
+                if (event.type === "profiler.completed") {
+                  const recommendation = (data.recommendation ?? {}) as Record<string, unknown>;
+                  const artifacts = (data.artifacts ?? {}) as Record<string, unknown>;
+                  return {
+                    ...prev,
+                    profiler: {
+                      ...prev.profiler,
+                      apiAvailable: true,
+                      status: "ready",
+                      lastRunAt: new Date().toISOString(),
+                      lastError: null,
+                      message: msg || "Profiler recommendation updated.",
+                      recommendation: {
+                        source: "profiler",
+                        generatedAt: new Date().toISOString(),
+                        connections: Number(recommendation.connections ?? prev.maxSimultaneousDownloads),
+                        queueMode: Boolean(recommendation.queueMode ?? true),
+                        segmentSize: Number(recommendation.segmentSize ?? prev.advanced.segmentSize),
+                        bufferSize: Number(recommendation.bufferSize ?? prev.advanced.bufferSize),
+                        forceHttp1: Boolean(recommendation.http1 ?? prev.advanced.forceHttp1),
+                      },
+                      artifacts: {
+                        profileDir: typeof artifacts.profileDir === "string" ? artifacts.profileDir : undefined,
+                        rawCsv: typeof artifacts.rawCsv === "string" ? artifacts.rawCsv : undefined,
+                        summaryCsv: typeof artifacts.summaryCsv === "string" ? artifacts.summaryCsv : undefined,
+                      },
+                    },
+                  };
+                }
+                if (event.type === "profiler.failed") {
+                  const err = typeof data.message === "string" ? data.message : msg || "Profiler failed.";
+                  return {
+                    ...prev,
+                    profiler: {
+                      ...prev.profiler,
+                      status: "error",
+                      lastRunAt: new Date().toISOString(),
+                      lastError: err,
+                      message: err,
+                    },
+                  };
+                }
+                if (event.type === "profiler.cancelled") {
+                  return {
+                    ...prev,
+                    profiler: {
+                      ...prev.profiler,
+                      status: "idle",
+                      liveStage: "cancelled",
+                      message: msg || "Profiler run cancelled.",
+                      lastError: null,
+                    },
+                  };
+                }
+                return prev;
+              });
             }
           },
           (message) => {
@@ -364,22 +463,37 @@ export default function App() {
     const available = await checkProfilerApiAvailable();
     if (!settings) return;
     let recommendation = settings.profiler.recommendation;
+    let artifacts = settings.profiler.artifacts ?? null;
+    let status = settings.profiler.status;
+    let runId = settings.profiler.runId ?? null;
     let message = available ? "Profiler API detected." : "Profiler integration requires quickget-agent profiler API.";
-    if (!available) {
+    if (available) {
       try {
-        const local = await invoke<Record<string, unknown>>("read_latest_profiler_recommendation");
-        recommendation = {
-          source: "manual",
-          generatedAt: new Date().toISOString(),
-          connections: Number(local.connections ?? settings.maxSimultaneousDownloads),
-          queueMode: Boolean(local.queueMode ?? true),
-          segmentSize: Number(local.segmentSize ?? settings.advanced.segmentSize),
-          bufferSize: Number(local.bufferSize ?? settings.advanced.bufferSize),
-          forceHttp1: Boolean(local.http1 ?? settings.advanced.forceHttp1),
-        };
-        message = "Loaded recommendation from local QuickGet profile summary.";
+        const state = await getProfilerStatus();
+        const rawRec = (state.recommendation ?? {}) as Record<string, unknown>;
+        if (Object.keys(rawRec).length > 0) {
+          recommendation = {
+            source: "profiler",
+            generatedAt: new Date().toISOString(),
+            connections: Number(rawRec.connections ?? settings.maxSimultaneousDownloads),
+            queueMode: Boolean(rawRec.queueMode ?? true),
+            segmentSize: Number(rawRec.segmentSize ?? settings.advanced.segmentSize),
+            bufferSize: Number(rawRec.bufferSize ?? settings.advanced.bufferSize),
+            forceHttp1: Boolean(rawRec.http1 ?? settings.advanced.forceHttp1),
+          };
+        }
+        const rawArtifacts = (state.artifacts ?? {}) as Record<string, unknown>;
+        artifacts = Object.keys(rawArtifacts).length
+          ? {
+              profileDir: typeof rawArtifacts.profileDir === "string" ? rawArtifacts.profileDir : undefined,
+              rawCsv: typeof rawArtifacts.rawCsv === "string" ? rawArtifacts.rawCsv : undefined,
+              summaryCsv: typeof rawArtifacts.summaryCsv === "string" ? rawArtifacts.summaryCsv : undefined,
+            }
+          : artifacts;
+        status = typeof state.status === "string" ? (state.status as AppSettings["profiler"]["status"]) : status;
+        runId = typeof state.runId === "string" ? state.runId : runId;
       } catch {
-        // keep placeholder
+        // keep availability-only status if response shape parse fails
       }
     }
     const next: AppSettings = {
@@ -388,47 +502,57 @@ export default function App() {
         ...settings.profiler,
         apiAvailable: available,
         lastCheckedAt: new Date().toISOString(),
-        status: available || recommendation ? "ready" : "error",
+        status: available ? status : "error",
+        runId,
         recommendation,
+        artifacts,
         message,
       },
     };
     await onSettingsChange(next);
   };
 
-  const onRunProfiler = async () => {
+  const onRunProfiler = async (request?: RunProfilerRequest) => {
     if (!settings) return;
-    await onSettingsChange({ ...settings, profiler: { ...settings.profiler, status: "running", message: "Running profiler..." } });
+    await onSettingsChange({
+      ...settings,
+      profiler: {
+        ...settings.profiler,
+        status: "running",
+        message: "Starting profiler...",
+        runId: null,
+        liveStage: "prepare",
+        liveStepIndex: 0,
+        liveStepTotal: null,
+        liveLogs: [],
+        lastError: null,
+      },
+    });
     try {
-      const result = await runProfiler();
-      const recommendation = (result.recommendation as Record<string, unknown> | undefined) ?? null;
-      if (!recommendation) throw new Error("No recommendation returned by profiler API.");
-      setProfilerRecommendation({
-        source: "profiler",
-        generatedAt: new Date().toISOString(),
-        connections: Number(recommendation.connections ?? settings.maxSimultaneousDownloads),
-        queueMode: Boolean(recommendation.queueMode ?? true),
-        segmentSize: Number(recommendation.segmentSize ?? settings.advanced.segmentSize),
-        bufferSize: Number(recommendation.bufferSize ?? settings.advanced.bufferSize),
-        forceHttp1: Boolean(recommendation.http1 ?? settings.advanced.forceHttp1),
-      });
+      await runProfiler(request);
+    } catch (error) {
       await onSettingsChange({
         ...settings,
         profiler: {
           ...settings.profiler,
-          apiAvailable: true,
-          lastRunAt: new Date().toISOString(),
-          status: "ready",
-          message: "Profiler recommendation updated.",
-          recommendation: {
-            source: "profiler",
-            generatedAt: new Date().toISOString(),
-            connections: Number(recommendation.connections ?? settings.maxSimultaneousDownloads),
-            queueMode: Boolean(recommendation.queueMode ?? true),
-            segmentSize: Number(recommendation.segmentSize ?? settings.advanced.segmentSize),
-            bufferSize: Number(recommendation.bufferSize ?? settings.advanced.bufferSize),
-            forceHttp1: Boolean(recommendation.http1 ?? settings.advanced.forceHttp1),
-          },
+          status: "error",
+          lastError: getErrorMessage(error),
+          message: getErrorMessage(error),
+        },
+      });
+    }
+  };
+
+  const onCancelProfiler = async () => {
+    if (!settings) return;
+    try {
+      await cancelProfilerRun();
+      await onSettingsChange({
+        ...settings,
+        profiler: {
+          ...settings.profiler,
+          status: "idle",
+          message: "Cancelling profiler run...",
         },
       });
     } catch (error) {
@@ -437,6 +561,7 @@ export default function App() {
         profiler: {
           ...settings.profiler,
           status: "error",
+          lastError: getErrorMessage(error),
           message: getErrorMessage(error),
         },
       });
@@ -478,6 +603,7 @@ export default function App() {
         settingsBusy={settingsBusy}
         onSettingsChange={onSettingsChange}
         onRunProfiler={onRunProfiler}
+        onCancelProfiler={onCancelProfiler}
         onRefreshProfilerStatus={onRefreshProfilerStatus}
         onRestoreRecommended={onRestoreRecommended}
         forceShowDownloadsToken={forceShowDownloadsToken}

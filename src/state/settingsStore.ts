@@ -58,6 +58,13 @@ export function defaultSettings(): AppSettings {
       lastCheckedAt: null,
       lastRunAt: null,
       status: "idle",
+      runId: null,
+      liveStage: null,
+      liveStepIndex: null,
+      liveStepTotal: null,
+      liveLogs: [],
+      lastError: null,
+      artifacts: null,
       recommendation: null,
     },
   };

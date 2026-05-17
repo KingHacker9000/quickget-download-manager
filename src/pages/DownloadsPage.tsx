@@ -5,6 +5,8 @@ import { CommandBar } from "../components/CommandBar";
 import { DownloadRow } from "../components/DownloadRow";
 import type { NavItem } from "../components/Sidebar";
 import { SettingsPage } from "./SettingsPage";
+import { ProfilerPage } from "./ProfilerPage";
+import type { RunProfilerRequest } from "../api/agentClient";
 import type {
   AgentConnectionState,
   AgentStatus,
@@ -28,7 +30,8 @@ type Props = {
   settings: AppSettings | null;
   settingsBusy: boolean;
   onSettingsChange: (next: AppSettings) => void;
-  onRunProfiler: () => Promise<void>;
+  onRunProfiler: (request?: RunProfilerRequest) => Promise<void>;
+  onCancelProfiler: () => Promise<void>;
   onRefreshProfilerStatus: () => Promise<void>;
   onRestoreRecommended: () => void;
   forceShowDownloadsToken: number;
@@ -87,6 +90,7 @@ export function DownloadsPage({
   settingsBusy,
   onSettingsChange,
   onRunProfiler,
+  onCancelProfiler,
   onRefreshProfilerStatus,
   onRestoreRecommended,
   forceShowDownloadsToken,
@@ -221,6 +225,16 @@ export function DownloadsPage({
           busy={settingsBusy}
           onChange={onSettingsChange}
           onRunProfiler={onRunProfiler}
+          onRefreshProfilerStatus={onRefreshProfilerStatus}
+          onRestoreRecommended={onRestoreRecommended}
+          onOpenProfilerTab={() => setActiveSection("Profiler")}
+        />
+      ) : activeSection === "Profiler" ? (
+        <ProfilerPage
+          settings={settings}
+          busy={settingsBusy}
+          onRunProfiler={onRunProfiler}
+          onCancelProfiler={onCancelProfiler}
           onRefreshProfilerStatus={onRefreshProfilerStatus}
           onRestoreRecommended={onRestoreRecommended}
         />

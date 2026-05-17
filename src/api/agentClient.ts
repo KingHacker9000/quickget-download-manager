@@ -285,8 +285,26 @@ export async function checkProfilerApiAvailable(): Promise<boolean> {
   }
 }
 
-export async function runProfiler(): Promise<Record<string, unknown>> {
+export async function getProfilerStatus(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(PROFILER_PATH, { method: "GET" });
+}
+
+export type RunProfilerRequest = {
+  level?: "quick" | "normal" | "exhaustive";
+  sizes?: string;
+  repeats?: number;
+  url?: string;
+};
+
+export async function runProfiler(payload?: RunProfilerRequest): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`${PROFILER_PATH}/run`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function cancelProfilerRun(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(`${PROFILER_PATH}/cancel`, {
     method: "POST",
     body: JSON.stringify({}),
   });

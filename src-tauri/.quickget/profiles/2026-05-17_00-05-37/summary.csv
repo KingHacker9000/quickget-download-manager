@@ -1,0 +1,3 @@
+rank,size_label,target_bytes,connections,queue_mode,segment_size,buffer_size,http_mode,avg_mbps,successes,total
+1,100MB,104857600,4,true,8388608,1048576,auto,6.7468,2,2
+2,100MB,104857600,2,true,8388608,524288,auto,5.4758,2,2
