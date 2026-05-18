@@ -592,7 +592,8 @@ export default function App() {
         agentStatus={agentStatus}
         errorMessage={errorMessage}
         activeDownloads={downloadsState.activeDownloads}
-        completedDownloads={downloadsState.completedDownloads}
+        recentCompletedDownloads={downloadsState.recentCompletedDownloads}
+        historyDownloads={downloadsState.historyDownloads}
         busyIds={busyIds}
         onCreateDownload={onCreateDownload}
         onPause={onPause}
@@ -607,6 +608,7 @@ export default function App() {
         onRefreshProfilerStatus={onRefreshProfilerStatus}
         onRestoreRecommended={onRestoreRecommended}
         forceShowDownloadsToken={forceShowDownloadsToken}
+        onNotify={pushToast}
       />
       <Toasts items={toasts} onDismiss={dismissToast} />
       <QuitConfirmModal

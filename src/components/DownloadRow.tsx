@@ -8,6 +8,7 @@ type Props = {
   download: DownloadSnapshot;
   busy?: boolean;
   isCompleted?: boolean;
+  onSelect?: (download: DownloadSnapshot) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onCancel: (id: string) => void;
@@ -18,6 +19,7 @@ export function DownloadRow({
   download,
   busy = false,
   isCompleted = false,
+  onSelect,
   onPause,
   onResume,
   onCancel,
@@ -68,11 +70,17 @@ export function DownloadRow({
   }, [debugProgressEnabled, download.id, download.downloaded_bytes, download.total_bytes, segments.length]);
 
   return (
-    <article className="rounded-xl border border-slate-700/70 bg-slate-900/60 px-3 py-2">
+    <article
+      className={`rounded-xl border border-slate-700/70 bg-slate-900/60 px-3 py-2 ${onSelect ? "cursor-pointer transition hover:border-cyan-500/40 hover:bg-slate-800/60" : ""}`}
+      onClick={onSelect ? () => onSelect(download) : undefined}
+    >
       <div className="flex items-start gap-3">
         <button
           type="button"
-          onClick={() => setExpanded((current) => !current)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpanded((current) => !current);
+          }}
           className="mt-1 rounded-md px-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
         >
           {expanded ? "v" : ">"}
@@ -127,7 +135,10 @@ export function DownloadRow({
           {canPause && (
             <button
               type="button"
-              onClick={() => onPause(download.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onPause(download.id);
+              }}
               disabled={busy}
               className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40"
             >
@@ -137,7 +148,10 @@ export function DownloadRow({
           {canResume && (
             <button
               type="button"
-              onClick={() => onResume(download.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onResume(download.id);
+              }}
               disabled={busy}
               className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40"
             >
@@ -147,7 +161,10 @@ export function DownloadRow({
           {canCancel && !isCompleted && (
             <button
               type="button"
-              onClick={() => onCancel(download.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCancel(download.id);
+              }}
               disabled={busy}
               className="rounded-lg border border-amber-500/40 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/10 disabled:opacity-40"
             >
@@ -157,7 +174,10 @@ export function DownloadRow({
           {(isCompleted || download.state === "failed" || download.state === "cancelled") && (
             <button
               type="button"
-              onClick={() => onDelete(download.id)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete(download.id);
+              }}
               disabled={busy}
               className="rounded-lg border border-rose-500/40 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/10 disabled:opacity-40"
             >

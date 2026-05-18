@@ -1,6 +1,7 @@
 use crate::{agent, download_control, settings, tray};
 use tauri::Manager;
 use tauri_plugin_autostart::ManagerExt;
+use std::path::{Path, PathBuf};
 
 #[tauri::command]
 pub async fn ensure_agent_running(app: tauri::AppHandle) -> Result<agent::AgentStatus, String> {
@@ -53,6 +54,143 @@ pub fn open_downloads_folder() -> Result<(), String> {
 
   #[allow(unreachable_code)]
   Err("opening downloads folder is not supported on this platform".to_string())
+}
+
+fn normalize_local_path(path: &str) -> Result<PathBuf, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("path is required".to_string());
+  }
+  let candidate = Path::new(trimmed);
+  let resolved = if candidate.is_absolute() {
+    candidate.to_path_buf()
+  } else {
+    std::env::current_dir()
+      .map_err(|e| format!("failed to read current dir: {e}"))?
+      .join(candidate)
+  };
+  Ok(resolved)
+}
+
+#[tauri::command]
+pub fn file_exists(path: String) -> Result<bool, String> {
+  let resolved = normalize_local_path(&path)?;
+  Ok(resolved.exists())
+}
+
+#[tauri::command]
+pub fn open_download_file(path: String) -> Result<(), String> {
+  let resolved = normalize_local_path(&path)?;
+  if !resolved.is_file() {
+    return Err("downloaded file does not exist".to_string());
+  }
+  #[cfg(target_os = "windows")]
+  {
+    std::process::Command::new("cmd")
+      .args(["/C", "start", "", &resolved.to_string_lossy()])
+      .spawn()
+      .map_err(|e| format!("failed to open file: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg(&resolved)
+      .spawn()
+      .map_err(|e| format!("failed to open file: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "linux")]
+  {
+    std::process::Command::new("xdg-open")
+      .arg(&resolved)
+      .spawn()
+      .map_err(|e| format!("failed to open file: {e}"))?;
+    return Ok(());
+  }
+  #[allow(unreachable_code)]
+  Err("open file is not supported on this platform".to_string())
+}
+
+#[tauri::command]
+pub fn open_download_folder(path: String) -> Result<(), String> {
+  let resolved = normalize_local_path(&path)?;
+  let folder = if resolved.is_dir() {
+    resolved
+  } else {
+    resolved
+      .parent()
+      .ok_or_else(|| "unable to resolve parent folder".to_string())?
+      .to_path_buf()
+  };
+  if !folder.is_dir() {
+    return Err("download folder does not exist".to_string());
+  }
+  #[cfg(target_os = "windows")]
+  {
+    std::process::Command::new("explorer.exe")
+      .arg(&folder)
+      .spawn()
+      .map_err(|e| format!("failed to open folder: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg(&folder)
+      .spawn()
+      .map_err(|e| format!("failed to open folder: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "linux")]
+  {
+    std::process::Command::new("xdg-open")
+      .arg(&folder)
+      .spawn()
+      .map_err(|e| format!("failed to open folder: {e}"))?;
+    return Ok(());
+  }
+  #[allow(unreachable_code)]
+  Err("open folder is not supported on this platform".to_string())
+}
+
+#[tauri::command]
+pub fn reveal_download_file(path: String) -> Result<(), String> {
+  let resolved = normalize_local_path(&path)?;
+  if !resolved.exists() {
+    return Err("downloaded file does not exist".to_string());
+  }
+  #[cfg(target_os = "windows")]
+  {
+    let select_arg = format!("/select,{}", resolved.to_string_lossy());
+    std::process::Command::new("explorer.exe")
+      .arg(select_arg)
+      .spawn()
+      .map_err(|e| format!("failed to reveal file: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg("-R")
+      .arg(&resolved)
+      .spawn()
+      .map_err(|e| format!("failed to reveal file: {e}"))?;
+    return Ok(());
+  }
+  #[cfg(target_os = "linux")]
+  {
+    let folder = resolved
+      .parent()
+      .ok_or_else(|| "unable to resolve parent folder".to_string())?;
+    std::process::Command::new("xdg-open")
+      .arg(folder)
+      .spawn()
+      .map_err(|e| format!("failed to open folder: {e}"))?;
+    return Ok(());
+  }
+  #[allow(unreachable_code)]
+  Err("reveal file is not supported on this platform".to_string())
 }
 
 #[tauri::command]

@@ -1,52 +1,60 @@
 # QuickGet Download Manager (QDM)
 
-QuickGet Download Manager (QDM) is a Windows-first alpha desktop application for QuickGet.
+![CI](https://github.com/OWNER/QuickGet_Download_Manager/actions/workflows/ci.yml/badge.svg)
+![Release](https://github.com/OWNER/QuickGet_Download_Manager/actions/workflows/release.yml/badge.svg)
+![License](https://img.shields.io/badge/license-TBD-lightgrey.svg)
 
-QDM is built with Tauri v2, React, TypeScript, Vite, and Tailwind CSS.
+QuickGet Download Manager (QDM) is currently `v0.1.0-alpha`.
+It is a Windows-first alpha desktop application built with Tauri v2, React, TypeScript, Vite, and Tailwind CSS.
 
-## Platform status
+If you fork this repository, replace `OWNER/QuickGet_Download_Manager` in the badge URLs above.
 
-- Primary tested platform: Windows
-- macOS/Linux builds may exist but are currently untested
+## Status (`v0.1.0-alpha`)
 
-## Architecture
+- Alpha quality, not a stable release.
+- Primary tested platform: Windows.
+- macOS/Linux build outputs may exist but are untested and experimental.
+- Full cross-platform support is not claimed yet.
 
-QDM does not implement downloading logic itself.
+## QuickGet backend / CLI repository
 
-QDM connects to `quickget-agent` from the sibling `QuickGet_CLI` backend repository over localhost HTTP and SSE.
+QDM relies on `quickget-agent` from the QuickGet backend repository:
 
-## Desktop lifecycle behavior (Windows-first)
+- https://github.com/KingHacker9000/quickget
 
-- Closing the main window (`X`) hides QDM to the system tray instead of exiting.
-- While hidden, the app process and `quickget-agent` stay alive and downloads continue.
-- Tray menu actions:
-  - `Open QuickGet Download Manager`
-  - `Pause All`
-  - `Resume All`
-  - `Show Downloads`
-  - `Quit`
-- `Quit` does not silently terminate active downloads.
-  - If active downloads exist, QDM asks: `Pause active downloads and quit?`
-  - Options: `Pause and Quit`, `Keep Running`, `Cancel`
+## Platform support
 
-## Launch On Startup Setting
+See:
 
-- `Settings -> Launch on startup` controls OS auto-start registration.
-- Auto-start is never forced; user must explicitly enable it.
-- Settings are persisted locally in a user config file (`QuickGet/qdm-settings.json` under the OS config directory).
+- [docs/platform-support.md](docs/platform-support.md)
 
-## Agent setup
+## Development
 
-Fetch and prepare a bundled sidecar agent binary:
+Install dependencies:
+
+```bash
+npm ci
+```
+
+Run Tauri dev with a release-fetched sidecar:
+
+```bash
+npm run tauri:dev
+```
+
+Run Tauri dev with a local sibling `QuickGet_CLI` sidecar:
+
+```bash
+npm run dev:local-agent
+```
+
+## Fetch quickget-agent
+
+Download and prepare the sidecar binary:
 
 ```bash
 npm run fetch-agent
 ```
-
-`fetch-agent` writes sidecar metadata to:
-- `src-tauri/binaries/quickget-agent.meta.json`
-
-This file records source (`local` or `github`), resolved tag, asset name, and fetch timestamp.
 
 Use local sibling backend binary instead of GitHub Releases:
 
@@ -54,36 +62,24 @@ Use local sibling backend binary instead of GitHub Releases:
 QDM_USE_LOCAL_AGENT=1 npm run fetch-agent
 ```
 
-Local fallback paths:
-- Windows: `../QuickGet_CLI/quickget-agent.exe`
-- macOS/Linux: `../QuickGet_CLI/quickget-agent`
+## Build (Windows app)
 
-## Development
-
-Run with release-fetched agent:
+Build frontend:
 
 ```bash
-npm run tauri:dev
+npm run build
 ```
 
-Run with local sibling repo agent:
-
-```bash
-npm run dev:local-agent
-```
-
-Create a production desktop build:
+Build desktop installer/package:
 
 ```bash
 npm run tauri:build
 ```
 
-## Verifying agent version in app
+Windows is the only actively tested target for this alpha.
+macOS/Linux artifacts are experimental and currently untested.
 
-1. Run `npm run fetch-agent`.
-2. Check `src-tauri/binaries/quickget-agent.meta.json` for the resolved release tag.
-3. Start QDM and confirm:
-   - Connection badge text includes `v<agent-version>`
-   - Dev console logs `[QDM] quickget-agent connected` with `version`, `apiVersion`, `buildCommit`, `buildDate`.
+## CI and release docs
 
-To pin a specific release instead of `latest`, set `quickgetAgentVersion` in `qdm.config.json` to your tag (for example `v1.2.3`) before running `npm run fetch-agent`.
+- [docs/building.md](docs/building.md)
+- [docs/releasing.md](docs/releasing.md)

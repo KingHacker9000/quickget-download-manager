@@ -1,4 +1,4 @@
-type NavItem = "Downloads" | "Queue" | "History" | "Profiler" | "Settings";
+type NavItem = "Downloads" | "History" | "Profiler" | "Settings";
 
 type Props = {
   items: NavItem[];

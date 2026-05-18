@@ -4,9 +4,11 @@ import type { AgentConnectionState, AgentEvent, DownloadSnapshot } from "../type
 export type DownloadsState = {
   byId: Record<string, DownloadSnapshot>;
   activeIds: string[];
-  completedIds: string[];
+  recentCompletedIds: string[];
+  historyIds: string[];
   activeDownloads: DownloadSnapshot[];
-  completedDownloads: DownloadSnapshot[];
+  recentCompletedDownloads: DownloadSnapshot[];
+  historyDownloads: DownloadSnapshot[];
   connectionStatus: AgentConnectionState;
   agentError: string | null;
 };
@@ -14,9 +16,11 @@ export type DownloadsState = {
 const initialState: DownloadsState = {
   byId: {},
   activeIds: [],
-  completedIds: [],
+  recentCompletedIds: [],
+  historyIds: [],
   activeDownloads: [],
-  completedDownloads: [],
+  recentCompletedDownloads: [],
+  historyDownloads: [],
   connectionStatus: "starting",
   agentError: null,
 };
@@ -38,18 +42,36 @@ function cloneSnapshot(snapshot: DownloadSnapshot): DownloadSnapshot {
   };
 }
 
-function withDerivedLists(next: Omit<DownloadsState, "activeIds" | "completedIds" | "activeDownloads" | "completedDownloads">): DownloadsState {
+function withDerivedLists(next: Omit<DownloadsState, "activeIds" | "recentCompletedIds" | "historyIds" | "activeDownloads" | "recentCompletedDownloads" | "historyDownloads">): DownloadsState {
   const entries = Object.values(next.byId);
+  const dayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
+  const withSortKey = entries.map((d) => {
+    const sortTs = d.updated_at ?? d.completed_at ?? d.created_at ?? "";
+    const sortMs = Date.parse(sortTs);
+    return { d, sortMs: Number.isFinite(sortMs) ? sortMs : 0 };
+  });
   const activeDownloads = entries.filter(
     (d) => d.state !== "completed" && d.state !== "cancelled" && d.state !== "failed"
   );
-  const completedDownloads = entries.filter((d) => d.state === "completed");
+  const recentCompletedDownloads = entries.filter((d) => {
+    if (d.state !== "completed") return false;
+    const completedTs = d.completed_at ?? d.updated_at ?? d.created_at;
+    if (!completedTs) return false;
+    const completedMs = Date.parse(completedTs);
+    return Number.isFinite(completedMs) && completedMs >= dayAgoMs;
+  });
+  const historyDownloads = withSortKey
+    .slice()
+    .sort((a, b) => b.sortMs - a.sortMs)
+    .map((entry) => entry.d);
   return {
     ...next,
     activeDownloads,
-    completedDownloads,
+    recentCompletedDownloads,
+    historyDownloads,
     activeIds: activeDownloads.map((d) => d.id),
-    completedIds: completedDownloads.map((d) => d.id),
+    recentCompletedIds: recentCompletedDownloads.map((d) => d.id),
+    historyIds: historyDownloads.map((d) => d.id),
   };
 }
 

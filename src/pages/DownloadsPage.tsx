@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { AddDownloadModal } from "../components/AddDownloadModal";
 import { CommandBar } from "../components/CommandBar";
 import { DownloadRow } from "../components/DownloadRow";
+import { DownloadHistoryDetailsModal } from "../components/DownloadHistoryDetailsModal";
 import type { NavItem } from "../components/Sidebar";
 import { SettingsPage } from "./SettingsPage";
 import { ProfilerPage } from "./ProfilerPage";
@@ -20,7 +21,8 @@ type Props = {
   agentStatus: AgentStatus | null;
   errorMessage: string | null;
   activeDownloads: DownloadSnapshot[];
-  completedDownloads: DownloadSnapshot[];
+  recentCompletedDownloads: DownloadSnapshot[];
+  historyDownloads: DownloadSnapshot[];
   busyIds: Set<string>;
   onCreateDownload: (request: CreateDownloadRequest) => Promise<void>;
   onPause: (id: string) => void;
@@ -35,6 +37,7 @@ type Props = {
   onRefreshProfilerStatus: () => Promise<void>;
   onRestoreRecommended: () => void;
   forceShowDownloadsToken: number;
+  onNotify: (message: string, tone?: "info" | "success" | "error") => void;
 };
 
 function connectionText(state: AgentConnectionState, status: AgentStatus | null): string {
@@ -79,7 +82,8 @@ export function DownloadsPage({
   agentStatus,
   errorMessage,
   activeDownloads,
-  completedDownloads,
+  recentCompletedDownloads,
+  historyDownloads,
   busyIds,
   onCreateDownload,
   onPause,
@@ -94,11 +98,13 @@ export function DownloadsPage({
   onRefreshProfilerStatus,
   onRestoreRecommended,
   forceShowDownloadsToken,
+  onNotify,
 }: Props) {
   const [activeSection, setActiveSection] = useState<NavItem>("Downloads");
   const [modalOpen, setModalOpen] = useState(false);
   const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
   const [completedOpen, setCompletedOpen] = useState(false);
+  const [historyDetails, setHistoryDetails] = useState<DownloadSnapshot | null>(null);
 
   const friendlyError = mapFriendlyError(errorMessage);
 
@@ -187,14 +193,14 @@ export function DownloadsPage({
               className="mb-2 flex w-full items-center justify-between rounded-xl border border-slate-700/70 bg-slate-800/40 px-3 py-2 text-left"
             >
               <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Completed</span>
-              <span className="text-xs text-slate-500">{completedDownloads.length} {completedOpen ? "-" : "+"}</span>
+              <span className="text-xs text-slate-500">{recentCompletedDownloads.length} {completedOpen ? "-" : "+"}</span>
             </button>
             {completedOpen &&
-              (completedDownloads.length === 0 ? (
+              (recentCompletedDownloads.length === 0 ? (
                 <EmptyState title="No completed downloads" hint="Finished files appear here." />
               ) : (
                 <div className="space-y-2">
-                  {completedDownloads.map((download) => (
+                  {recentCompletedDownloads.map((download) => (
                     <DownloadRow
                       key={download.id}
                       download={download}
@@ -238,11 +244,41 @@ export function DownloadsPage({
           onRefreshProfilerStatus={onRefreshProfilerStatus}
           onRestoreRecommended={onRestoreRecommended}
         />
+      ) : activeSection === "History" ? (
+        <section className="space-y-2">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">History</h2>
+            <span className="text-xs text-slate-500">{historyDownloads.length}</span>
+          </div>
+          {historyDownloads.length === 0 ? (
+            <EmptyState title="No download history" hint="Completed, failed, cancelled, and other records appear here." />
+          ) : (
+            historyDownloads.map((download) => (
+              <DownloadRow
+                key={download.id}
+                download={download}
+                isCompleted={download.state === "completed"}
+                onSelect={setHistoryDetails}
+                busy={busyIds.has(download.id)}
+                onPause={onPause}
+                onResume={onResume}
+                onCancel={onCancel}
+                onDelete={onDelete}
+              />
+            ))
+          )}
+        </section>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
           {activeSection} section is reserved for upcoming releases.
         </div>
       )}
+      <DownloadHistoryDetailsModal
+        open={historyDetails != null}
+        download={historyDetails}
+        onClose={() => setHistoryDetails(null)}
+        onNotify={onNotify}
+      />
     </AppShell>
   );
 }
