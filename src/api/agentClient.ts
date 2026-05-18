@@ -4,9 +4,11 @@ import type {
   AgentErrorResponse,
   AgentEvent,
   AgentStatus,
+  CaptureSnapshot,
   CreateDownloadRequest,
   DownloadSnapshot,
   SegmentProgress,
+  StartCaptureRequest,
 } from "../types/agent";
 
 export const AGENT_BASE_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
@@ -15,6 +17,7 @@ const AGENT_FETCH_BASE = import.meta.env.DEV ? AGENT_DEV_PROXY_BASE : AGENT_BASE
 
 const HEALTH_PATH = "/health";
 const DOWNLOADS_PATH = "/downloads";
+const CAPTURES_PATH = "/captures";
 const EVENTS_PATH = "/events";
 const PROFILER_PATH = "/profiler";
 
@@ -22,6 +25,7 @@ type EventCallback = (event: AgentEvent) => void;
 type ErrorCallback = (message: string) => void;
 type AgentApiDownload = Record<string, unknown>;
 type AgentApiEvent = Record<string, unknown>;
+type AgentApiCapture = Record<string, unknown>;
 
 let cachedToken: string | null = null;
 
@@ -124,6 +128,40 @@ function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
     active_jobs: asNumber(raw.activeJobs),
     mutations: asNumber(raw.mutations),
     segments,
+  };
+}
+
+function normalizeCapture(raw: AgentApiCapture): CaptureSnapshot {
+  const sourceRaw = raw.source && typeof raw.source === "object" ? (raw.source as Record<string, unknown>) : {};
+  const duplicateRaw =
+    raw.duplicate && typeof raw.duplicate === "object" ? (raw.duplicate as Record<string, unknown>) : {};
+  const metadata =
+    raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+      ? (raw.metadata as Record<string, unknown>)
+      : undefined;
+  return {
+    id: asString(raw.id) ?? "",
+    state: asString(raw.state) ?? "pending",
+    url: asString(raw.url),
+    suggested_filename: asString(raw.suggestedFilename) ?? asString(raw.filename),
+    output_dir: asString(raw.outputDir) ?? asString(raw.directory),
+    output_path: asString(raw.outputPath),
+    speed_mode: asString(raw.speedMode) === "manual" ? "manual" : "auto",
+    source: {
+      page_url: asString(sourceRaw.pageUrl) ?? asString(raw.pageUrl),
+      referrer: asString(sourceRaw.referrer) ?? asString(raw.referrer),
+      domain: asString(sourceRaw.domain) ?? asString(raw.domain),
+      user_agent: asString(sourceRaw.userAgent),
+      authenticated: typeof sourceRaw.authenticated === "boolean" ? sourceRaw.authenticated : undefined,
+    },
+    duplicate: {
+      reason: asString(duplicateRaw.reason),
+      existing_path: asString(duplicateRaw.existingPath) ?? asString(raw.existingPath),
+      existing_download_id: asString(duplicateRaw.existingDownloadId),
+    },
+    metadata,
+    created_at: asString(raw.createdAt),
+    updated_at: asString(raw.updatedAt),
   };
 }
 
@@ -281,6 +319,41 @@ export async function deleteDownload(id: string, deleteFiles = false): Promise<v
   });
 }
 
+function mapStartCapturePayload(payload: StartCaptureRequest): Record<string, unknown> {
+  return {
+    ...(payload.output_dir ? { outputDir: payload.output_dir } : {}),
+    ...(payload.filename ? { filename: payload.filename } : {}),
+    ...(payload.speed_mode ? { speedMode: payload.speed_mode } : {}),
+    ...(payload.duplicate_action ? { duplicateAction: payload.duplicate_action } : {}),
+  };
+}
+
+export async function listCaptures(): Promise<CaptureSnapshot[]> {
+  const response = await request<AgentApiCapture[]>(CAPTURES_PATH, { method: "GET" });
+  return response.map((item) => normalizeCapture(item));
+}
+
+export async function getCapture(id: string): Promise<CaptureSnapshot> {
+  const response = await request<AgentApiCapture>(`${CAPTURES_PATH}/${encodeURIComponent(id)}`, { method: "GET" });
+  return normalizeCapture(response);
+}
+
+export async function rejectCapture(id: string): Promise<CaptureSnapshot> {
+  const response = await request<AgentApiCapture>(`${CAPTURES_PATH}/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  return normalizeCapture(response);
+}
+
+export async function startCaptureDownload(id: string, payload: StartCaptureRequest): Promise<CaptureSnapshot> {
+  const response = await request<AgentApiCapture>(`${CAPTURES_PATH}/${encodeURIComponent(id)}/start`, {
+    method: "POST",
+    body: JSON.stringify(mapStartCapturePayload(payload)),
+  });
+  return normalizeCapture(response);
+}
+
 export async function checkProfilerApiAvailable(): Promise<boolean> {
   try {
     await request<Record<string, unknown>>(PROFILER_PATH, { method: "GET" });
@@ -353,6 +426,7 @@ function parseSseEvent(frame: string): AgentEvent | null {
     return {
       type: typeof raw.type === "string" ? raw.type : "unknown",
       download_id: eventId ?? (typeof raw.download_id === "string" ? raw.download_id : undefined),
+      capture_id: asString(raw.capture_id) ?? asString(raw.captureId),
       timestamp: typeof raw.timestamp === "string" ? raw.timestamp : undefined,
       snapshot,
       message: typeof raw.message === "string" ? raw.message : undefined,

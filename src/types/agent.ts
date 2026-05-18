@@ -96,8 +96,48 @@ export type AgentEventType =
 export type AgentEvent = {
   type: AgentEventType | string;
   download_id?: string;
+  capture_id?: string;
   timestamp?: string;
   snapshot?: DownloadSnapshot;
   message?: string;
   data?: Record<string, unknown>;
+};
+
+export type CaptureMode = "ask" | "auto" | "disabled";
+export type CaptureDuplicateAction = "overwrite" | "new_name";
+
+export type CaptureSourceMetadata = {
+  page_url?: string;
+  referrer?: string;
+  domain?: string;
+  user_agent?: string;
+  authenticated?: boolean;
+};
+
+export type CaptureDuplicateInfo = {
+  reason?: string;
+  existing_path?: string;
+  existing_download_id?: string;
+};
+
+export type CaptureSnapshot = {
+  id: string;
+  state: "pending" | "started" | "rejected" | "duplicate" | string;
+  url?: string;
+  suggested_filename?: string;
+  output_dir?: string;
+  output_path?: string;
+  speed_mode?: "auto" | "manual";
+  source?: CaptureSourceMetadata;
+  duplicate?: CaptureDuplicateInfo;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type StartCaptureRequest = {
+  output_dir?: string;
+  filename?: string;
+  speed_mode?: "auto" | "manual";
+  duplicate_action?: CaptureDuplicateAction;
 };

@@ -67,6 +67,13 @@ export function defaultSettings(): AppSettings {
       artifacts: null,
       recommendation: null,
     },
+    browserCapture: {
+      mode: "ask",
+      authenticatedDownloadsEnabled: true,
+      openFullQdmOnCapture: false,
+      showMiniPopupOnCapture: true,
+      openFullQdmOnError: true,
+    },
   };
 }
 
@@ -96,6 +103,7 @@ export function mergeWithDefaults(input: Partial<AppSettings> | null | undefined
   const candidate = input ?? {};
   const advanced = (candidate.advanced ?? {}) as Partial<AppSettings["advanced"]>;
   const profiler = (candidate.profiler ?? {}) as Partial<AppSettings["profiler"]>;
+  const browserCapture = (candidate.browserCapture ?? {}) as Partial<AppSettings["browserCapture"]>;
 
   return {
     ...base,
@@ -111,6 +119,14 @@ export function mergeWithDefaults(input: Partial<AppSettings> | null | undefined
       ...base.profiler,
       ...profiler,
       recommendation: profiler.recommendation ?? base.profiler.recommendation,
+    },
+    browserCapture: {
+      ...base.browserCapture,
+      ...browserCapture,
+      mode:
+        browserCapture.mode === "auto" || browserCapture.mode === "disabled" || browserCapture.mode === "ask"
+          ? browserCapture.mode
+          : base.browserCapture.mode,
     },
   };
 }

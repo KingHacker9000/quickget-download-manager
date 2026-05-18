@@ -18,6 +18,8 @@ pub struct AppSettings {
   pub advanced: serde_json::Value,
   #[serde(default)]
   pub profiler: serde_json::Value,
+  #[serde(default)]
+  pub browser_capture: serde_json::Value,
 }
 
 impl Default for AppSettings {
@@ -32,6 +34,7 @@ impl Default for AppSettings {
       gentle_retry_on_failure: true,
       advanced: serde_json::json!({}),
       profiler: serde_json::json!({}),
+      browser_capture: serde_json::json!({}),
     }
   }
 }

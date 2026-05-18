@@ -91,12 +91,24 @@ export function SettingsPage({ settings, busy, onChange, onRunProfiler, onRefres
         onOpenProfilerTab={onOpenProfilerTab}
       />
 
-      <SettingsSection title="Browser Capture" description="Planned integration path for browser-originated downloads.">
-        <div className="rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
-          <p><span className="text-slate-400">Status:</span> Not installed yet</p>
-          <p className="mt-1 text-xs text-slate-300">Chrome extension support is planned after v0.1.0.</p>
-          <p className="mt-1 text-xs text-slate-400">QDM is already prepared to display downloads created through quickget-agent.</p>
-        </div>
+      <SettingsSection title="Browser Capture" description="Controls behavior for downloads captured by quickget-agent browser integrations.">
+        <label className="block space-y-1">
+          <span className="text-xs uppercase tracking-[0.16em] text-slate-400">Capture mode</span>
+          <select
+            className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-100"
+            disabled={busy}
+            value={settings.browserCapture.mode}
+            onChange={(e) => onChange({ ...settings, browserCapture: { ...settings.browserCapture, mode: e.target.value as "ask" | "auto" | "disabled" } })}
+          >
+            <option value="ask">Ask before capture</option>
+            <option value="auto">Auto-capture</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"><input type="checkbox" checked={settings.browserCapture.authenticatedDownloadsEnabled} disabled={busy} onChange={(e) => onChange({ ...settings, browserCapture: { ...settings.browserCapture, authenticatedDownloadsEnabled: e.target.checked } })} />Authenticated downloads enabled</label>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"><input type="checkbox" checked={settings.browserCapture.showMiniPopupOnCapture} disabled={busy} onChange={(e) => onChange({ ...settings, browserCapture: { ...settings.browserCapture, showMiniPopupOnCapture: e.target.checked } })} />Show mini popup on capture</label>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"><input type="checkbox" checked={settings.browserCapture.openFullQdmOnCapture} disabled={busy} onChange={(e) => onChange({ ...settings, browserCapture: { ...settings.browserCapture, openFullQdmOnCapture: e.target.checked } })} />Open full QDM on capture</label>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"><input type="checkbox" checked={settings.browserCapture.openFullQdmOnError} disabled={busy} onChange={(e) => onChange({ ...settings, browserCapture: { ...settings.browserCapture, openFullQdmOnError: e.target.checked } })} />Open full QDM on capture error</label>
       </SettingsSection>
 
       <SettingsSection title="Advanced" description="Raw QuickGet flags for power users.">

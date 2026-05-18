@@ -14,10 +14,14 @@ import {
   connectEvents,
   createDownload,
   deleteDownload,
+  getCapture,
+  listCaptures,
   getProfilerStatus,
   listDownloads,
   pauseDownload,
+  rejectCapture,
   runProfiler,
+  startCaptureDownload,
   type RunProfilerRequest,
   resumeDownload,
 } from "./api/agentClient";
@@ -42,6 +46,9 @@ import {
   mergeWithDefaults,
 } from "./state/settingsStore";
 import { AGENT_EVENT_DOWNLOAD_FAILED } from "./types/agent";
+import { BrowserCapturePopup } from "./components/BrowserCapturePopup";
+import { fileExists, openDownloadFile, openDownloadFolder } from "./api/fileActionsClient";
+import { removeCapture, replaceCaptures, setActiveCapturePopup, upsertCapture, useCapturesStore } from "./state/capturesStore";
 import { APP_NAME, APP_VERSION } from "./constants/appInfo";
 import { formatDiagnosticsReport, sanitizeDiagnostic, type DiagnosticEntry, type DiagnosticLevel, type DiagnosticSource } from "./utils/diagnostics";
 import { isSupportedAgentApiVersion, mapFriendlyError, REQUIRED_AGENT_API_MESSAGE, toFriendlyErrorMessage } from "./utils/errorMessages";
@@ -92,7 +99,10 @@ export default function App() {
   const diagnosticsIdRef = useRef(1);
   const previousConnectionRef = useRef<AgentConnectionState>("starting");
   const notifiedCompletions = useRef<Set<string>>(new Set());
+  const settingsRef = useRef<AppSettings | null>(null);
   const downloadsState = useDownloadsStore();
+  const capturesState = useCapturesStore();
+  const [captureBusyId, setCaptureBusyId] = useState<string | null>(null);
 
   const pushDiagnostic = (
     source: DiagnosticSource,
@@ -138,6 +148,10 @@ export default function App() {
   useEffect(() => {
     pushDiagnostic("system", `${APP_NAME} ${APP_VERSION} started`);
   }, []);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     let active = true;
@@ -192,8 +206,10 @@ export default function App() {
         }
 
         const downloads = await listDownloads();
+        const captures = await listCaptures().catch(() => []);
         if (!active) return;
         replaceDownloads(downloads);
+        replaceCaptures(captures);
         setAgentState("connected");
         setConnectionStatus("connected");
         pushDiagnostic("agent", `Agent connected. Loaded ${downloads.length} downloads.`);
@@ -208,6 +224,30 @@ export default function App() {
                 message: event.message ?? null,
               });
             }
+            if (event.type === "capture.requested" || event.type === "capture.duplicate_found" || event.type === "capture.started" || event.type === "capture.rejected") {
+              const captureId = event.capture_id ?? (typeof event.data?.capture_id === "string" ? event.data.capture_id : undefined);
+              if (captureId) {
+                void getCapture(captureId)
+                  .then((capture) => {
+                    upsertCapture(capture);
+                    const currentSettings = settingsRef.current;
+                    if ((event.type === "capture.requested" || event.type === "capture.duplicate_found") && currentSettings?.browserCapture.showMiniPopupOnCapture !== false) {
+                      setActiveCapturePopup(capture.id);
+                    }
+                    if (event.type === "capture.started" || event.type === "capture.rejected") {
+                      removeCapture(capture.id);
+                    }
+                  })
+                  .catch(() => {});
+              }
+              const currentSettings = settingsRef.current;
+              if (event.type === "capture.requested" && currentSettings?.browserCapture.openFullQdmOnCapture) {
+                void invoke("show_main_window");
+              }
+              if (event.type === "capture.requested" && !currentSettings?.browserCapture.openFullQdmOnCapture && currentSettings?.browserCapture.showMiniPopupOnCapture) {
+                void notifyCompletion("Browser download captured in QDM");
+              }
+            }
 
             if (event.type === AGENT_EVENT_DOWNLOAD_COMPLETED && event.download_id) {
               if (notifiedCompletions.current.has(event.download_id)) return;
@@ -217,11 +257,11 @@ export default function App() {
               pushToast(message, "success");
               void notifyCompletion(message);
             }
-            if (event.type === AGENT_EVENT_DOWNLOAD_FAILED && event.snapshot && settings?.gentleRetryOnFailure) {
+            if (event.type === AGENT_EVENT_DOWNLOAD_FAILED && event.snapshot && settingsRef.current?.gentleRetryOnFailure) {
               const s = event.snapshot;
               void createDownload({
                 url: s.url ?? "",
-                output_dir: s.output_path ? s.output_path.replace(/[\\/][^\\/]+$/, "") : settings.defaultDownloadFolder ?? undefined,
+                output_dir: s.output_path ? s.output_path.replace(/[\\/][^\\/]+$/, "") : settingsRef.current?.defaultDownloadFolder ?? undefined,
                 filename: s.filename,
                 quickget_options: GENTLE_RETRY_OPTIONS,
               }).then(upsertDownload).catch(() => {});
@@ -542,6 +582,66 @@ export default function App() {
     }
   };
 
+  const activeCapture = capturesState.activeCapturePopup;
+
+  const runCaptureAction = async (captureId: string, action: () => Promise<void>) => {
+    try {
+      setCaptureBusyId(captureId);
+      await action();
+    } catch (error) {
+      const message = toFriendlyErrorMessage(error, "Capture action failed.");
+      pushToast(message, "error");
+      if (settingsRef.current?.browserCapture.openFullQdmOnError) {
+        await invoke("show_main_window");
+      }
+    } finally {
+      setCaptureBusyId(null);
+    }
+  };
+
+  const onStartCapture = async (captureId: string, request: { output_dir?: string; filename?: string; speed_mode?: "auto" | "manual"; duplicate_action?: "overwrite" | "new_name" }) => {
+    await runCaptureAction(captureId, async () => {
+      await startCaptureDownload(captureId, request);
+      removeCapture(captureId);
+      const downloads = await listDownloads();
+      replaceDownloads(downloads);
+      pushToast("Capture started", "success");
+    });
+  };
+
+  const onRejectCapture = async (captureId: string) => {
+    await runCaptureAction(captureId, async () => {
+      await rejectCapture(captureId);
+      removeCapture(captureId);
+      pushToast("Capture rejected", "info");
+    });
+  };
+
+  const onShowCaptureExisting = async (captureId: string) => {
+    const capture = capturesState.byId[captureId];
+    const existingPath = capture?.duplicate?.existing_path;
+    if (!existingPath) return;
+    await runCaptureAction(captureId, async () => {
+      const exists = await fileExists(existingPath).catch(() => false);
+      if (exists) {
+        await openDownloadFile(existingPath).catch(async () => openDownloadFolder(existingPath));
+        await rejectCapture(captureId).catch(() => {});
+        removeCapture(captureId);
+        return;
+      }
+
+      await startCaptureDownload(captureId, {
+        output_dir: capture?.output_dir ?? settingsRef.current?.defaultDownloadFolder ?? undefined,
+        filename: capture?.suggested_filename,
+        speed_mode: settingsRef.current?.speedMode ?? "auto",
+      });
+      removeCapture(captureId);
+      const downloads = await listDownloads();
+      replaceDownloads(downloads);
+      pushToast("Existing file was missing. Started download instead.", "info");
+    });
+  };
+
   const onRefreshProfilerStatus = async () => {
     const available = await checkProfilerApiAvailable();
     if (!settings) return;
@@ -729,6 +829,18 @@ export default function App() {
         onKeepRunning={() => void runQuitAction("keepRunning")}
         onCancel={() => void runQuitAction("cancel")}
       />
+      {activeCapture && settings?.browserCapture.showMiniPopupOnCapture ? (
+        <BrowserCapturePopup
+          capture={activeCapture}
+          defaultOutputDir={settings.defaultDownloadFolder}
+          defaultSpeedMode={settings.speedMode}
+          busy={captureBusyId === activeCapture.id}
+          onStart={(request) => onStartCapture(activeCapture.id, request)}
+          onReject={() => onRejectCapture(activeCapture.id)}
+          onOpenFullQdm={() => invoke("show_main_window")}
+          onShowExisting={() => onShowCaptureExisting(activeCapture.id)}
+        />
+      ) : null}
     </>
   );
 }

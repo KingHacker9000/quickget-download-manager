@@ -63,6 +63,13 @@ export type AppSettings = {
   gentleRetryOnFailure: boolean;
   advanced: AdvancedQuickGetSettings;
   profiler: ProfilerState;
+  browserCapture: {
+    mode: "ask" | "auto" | "disabled";
+    authenticatedDownloadsEnabled: boolean;
+    openFullQdmOnCapture: boolean;
+    showMiniPopupOnCapture: boolean;
+    openFullQdmOnError: boolean;
+  };
 };
 
 export type SettingsValidationErrors = Partial<Record<keyof AdvancedQuickGetSettings, string>>;
