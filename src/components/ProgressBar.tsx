@@ -5,6 +5,7 @@ type Props = {
   totalBytes?: number;
   segments?: SegmentProgress[];
   indeterminate?: boolean;
+  label?: string;
 };
 
 function clampPercent(value: number): number {
@@ -19,7 +20,7 @@ function segmentClass(status: string): string {
   return "bg-slate-600/30";
 }
 
-export function ProgressBar({ value, totalBytes, segments, indeterminate = false }: Props) {
+export function ProgressBar({ value, totalBytes, segments, indeterminate = false, label }: Props) {
   const clamped = clampPercent(value);
   const hasSegmentModel = !!totalBytes && totalBytes > 0 && !!segments && segments.length > 0;
   const debugProgressEnabled =
@@ -42,7 +43,15 @@ export function ProgressBar({ value, totalBytes, segments, indeterminate = false
   }
 
   return (
-    <div className="h-2.5 w-full overflow-hidden rounded-full border border-slate-700/60 bg-slate-800/80">
+    <div
+      className="h-2.5 w-full overflow-hidden rounded-full border border-slate-700/60 bg-slate-800/80"
+      role="progressbar"
+      aria-label={label ?? "Download progress"}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Number.isFinite(clamped) ? clamped : 0}
+      aria-valuetext={indeterminate ? "In progress (size unknown)" : `${clamped.toFixed(1)}%`}
+    >
       {indeterminate && !hasSegmentModel ? (
         <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 motion-safe:animate-[qdm-indeterminate_1s_ease-in-out_infinite]" />
       ) : hasSegmentModel ? (

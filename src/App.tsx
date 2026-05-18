@@ -42,6 +42,9 @@ import {
   mergeWithDefaults,
 } from "./state/settingsStore";
 import { AGENT_EVENT_DOWNLOAD_FAILED } from "./types/agent";
+import { APP_NAME, APP_VERSION } from "./constants/appInfo";
+import { formatDiagnosticsReport, sanitizeDiagnostic, type DiagnosticEntry, type DiagnosticLevel, type DiagnosticSource } from "./utils/diagnostics";
+import { isSupportedAgentApiVersion, mapFriendlyError, REQUIRED_AGENT_API_MESSAGE, toFriendlyErrorMessage } from "./utils/errorMessages";
 
 function getErrorMessage(error: unknown): string {
   if (typeof error === "string" && error.trim().length > 0) return error;
@@ -52,6 +55,11 @@ function getErrorMessage(error: unknown): string {
     if (typeof maybe.cause === "string" && maybe.cause.trim().length > 0) return maybe.cause;
   }
   return "Unable to connect to quickget-agent";
+}
+
+function asFriendlyMessage(message: string | null | undefined, fallback: string): string {
+  if (!message || !message.trim()) return fallback;
+  return mapFriendlyError(message) ?? message;
 }
 
 async function notifyCompletion(message: string) {
@@ -79,14 +87,36 @@ export default function App() {
   const [showQuitPrompt, setShowQuitPrompt] = useState(false);
   const [quitBusy, setQuitBusy] = useState(false);
   const [forceShowDownloadsToken, setForceShowDownloadsToken] = useState(0);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([]);
   const toastIdRef = useRef(1);
+  const diagnosticsIdRef = useRef(1);
   const previousConnectionRef = useRef<AgentConnectionState>("starting");
   const notifiedCompletions = useRef<Set<string>>(new Set());
   const downloadsState = useDownloadsStore();
 
+  const pushDiagnostic = (
+    source: DiagnosticSource,
+    message: string,
+    level: DiagnosticLevel = "info",
+    details?: Record<string, unknown>
+  ) => {
+    const next: DiagnosticEntry = sanitizeDiagnostic({
+      id: diagnosticsIdRef.current++,
+      at: new Date().toISOString(),
+      source,
+      level,
+      message,
+      details,
+    });
+    setDiagnostics((current) => [next, ...current].slice(0, 250));
+  };
+
   const pushToast = (message: string, tone: ToastTone = "info") => {
+    const friendly = asFriendlyMessage(message, message);
     const id = toastIdRef.current++;
-    setToasts((current) => [...current, { id, message, tone }]);
+    setToasts((current) => [...current, { id, message: friendly, tone }]);
+    const level: DiagnosticLevel = tone === "error" ? "error" : tone === "success" ? "info" : "info";
+    pushDiagnostic("ui", `Toast: ${friendly}`, level);
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 3800);
@@ -106,6 +136,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    pushDiagnostic("system", `${APP_NAME} ${APP_VERSION} started`);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     let disconnectEvents: (() => void) | null = null;
 
@@ -113,10 +147,17 @@ export default function App() {
       setAgentState("starting");
       setConnectionStatus("starting");
       setErrorMessage(null);
+      pushDiagnostic("system", "Starting agent connection flow");
       try {
         const status = await invoke<AgentStatus>("ensure_agent_running");
         if (!active) return;
         setAgentStatus(status);
+        pushDiagnostic("agent", "Agent health received", "info", {
+          running: status.running,
+          version: status.version ?? "unknown",
+          apiVersion: status.api_version ?? "unknown",
+          baseUrl: status.base_url ?? "unknown",
+        });
         if (import.meta.env.DEV) {
           console.info(
             "[QDM] quickget-agent connected",
@@ -132,7 +173,21 @@ export default function App() {
         if (!status.running) {
           setAgentState("disconnected");
           setConnectionStatus("disconnected");
-          setErrorMessage(status.message);
+          const message = asFriendlyMessage(status.message, "quickget-agent is unavailable. Start the agent and retry.");
+          setErrorMessage(message);
+          setAgentError(message);
+          pushDiagnostic("agent", message, "error");
+          return;
+        }
+
+        if (!isSupportedAgentApiVersion(status.api_version)) {
+          setAgentState("failed");
+          setConnectionStatus("failed");
+          setErrorMessage(REQUIRED_AGENT_API_MESSAGE);
+          setAgentError(REQUIRED_AGENT_API_MESSAGE);
+          pushDiagnostic("agent", REQUIRED_AGENT_API_MESSAGE, "error", {
+            apiVersion: status.api_version ?? "unknown",
+          });
           return;
         }
 
@@ -141,11 +196,18 @@ export default function App() {
         replaceDownloads(downloads);
         setAgentState("connected");
         setConnectionStatus("connected");
+        pushDiagnostic("agent", `Agent connected. Loaded ${downloads.length} downloads.`);
 
         disconnectEvents = connectEvents(
           (event) => {
             applyEvent(event);
             setConnectionStatus("connected");
+            if (event.type !== "download.progress") {
+              pushDiagnostic("agent", `Event: ${event.type}`, "info", {
+                downloadId: event.download_id ?? null,
+                message: event.message ?? null,
+              });
+            }
 
             if (event.type === AGENT_EVENT_DOWNLOAD_COMPLETED && event.download_id) {
               if (notifiedCompletions.current.has(event.download_id)) return;
@@ -263,18 +325,21 @@ export default function App() {
             }
           },
           (message) => {
+            const friendly = asFriendlyMessage(message, "quickget-agent disconnected.");
             setConnectionStatus("disconnected");
-            setAgentError(message);
-            setErrorMessage(message);
+            setAgentError(friendly);
+            setErrorMessage(friendly);
+            pushDiagnostic("agent", friendly, "error");
           }
         );
       } catch (error) {
         if (!active) return;
         setAgentState("failed");
         setConnectionStatus("failed");
-        const message = getErrorMessage(error);
+        const message = toFriendlyErrorMessage(error, "Unable to connect to quickget-agent");
         setErrorMessage(message);
         setAgentError(message);
+        pushDiagnostic("system", message, "error");
       }
     };
 
@@ -290,8 +355,10 @@ export default function App() {
       try {
         setSettings(mergeWithDefaults(await getSettings()));
       } catch (error) {
-        pushToast(`Failed to load settings: ${getErrorMessage(error)}`, "error");
+        const message = toFriendlyErrorMessage(error, "Failed to load settings.");
+        pushToast(`Failed to load settings: ${message}`, "error");
         setSettings(defaultSettings());
+        pushDiagnostic("system", `Settings load fallback: ${message}`, "warn");
       }
     })();
   }, []);
@@ -351,12 +418,16 @@ export default function App() {
       setAgentState("disconnected");
     }
     if (downloadsState.agentError) {
-      setErrorMessage(downloadsState.agentError);
+      setErrorMessage(mapFriendlyError(downloadsState.agentError) ?? downloadsState.agentError ?? "quickget-agent error");
     }
   }, [downloadsState.connectionStatus, downloadsState.agentError, agentState]);
 
   const onCreateDownload = async (request: CreateDownloadRequest) => {
     try {
+      pushDiagnostic("ui", "Create download requested", "info", {
+        url: request.url,
+        hasCustomOutputDir: Boolean(request.output_dir),
+      });
       const activeSettings = settings ?? defaultSettings();
       const effective = getEffectiveQuickGetOptions(activeSettings);
       let snapshot;
@@ -394,9 +465,11 @@ export default function App() {
       upsertDownload(snapshot);
       setAgentError(null);
       setErrorMessage(null);
+      pushDiagnostic("agent", `Download created: ${snapshot.id}`, "info");
       pushToast("Download added", "success");
     } catch (error) {
-      const message = getErrorMessage(error);
+      const message = toFriendlyErrorMessage(error, "Download failed to create.");
+      pushDiagnostic("agent", `Create download failed: ${message}`, "error");
       pushToast(`Download failed to create: ${message}`, "error");
       throw error;
     }
@@ -408,9 +481,12 @@ export default function App() {
       await action();
       setAgentError(null);
       setErrorMessage(null);
+      pushDiagnostic("ui", `Action succeeded for ${id}`, "info");
     } catch (error) {
-      const message = getErrorMessage(error);
+      const message = toFriendlyErrorMessage(error, "Action failed.");
       setErrorMessage(message);
+      setAgentError(message);
+      pushDiagnostic("agent", `Action failed for ${id}: ${message}`, "error");
       pushToast(`Action failed: ${message}`, "error");
     } finally {
       markBusy(id, false);
@@ -418,6 +494,7 @@ export default function App() {
   };
 
   const onPause = async (id: string) => {
+    pushDiagnostic("ui", `Pause requested for ${id}`);
     await runAction(id, async () => {
       const snapshot = await pauseDownload(id);
       upsertDownload(snapshot);
@@ -425,6 +502,7 @@ export default function App() {
   };
 
   const onResume = async (id: string) => {
+    pushDiagnostic("ui", `Resume requested for ${id}`);
     await runAction(id, async () => {
       const snapshot = await resumeDownload(id);
       upsertDownload(snapshot);
@@ -432,6 +510,7 @@ export default function App() {
   };
 
   const onCancel = async (id: string) => {
+    pushDiagnostic("ui", `Cancel requested for ${id}`);
     await runAction(id, async () => {
       const snapshot = await cancelDownload(id);
       upsertDownload(snapshot);
@@ -439,6 +518,7 @@ export default function App() {
   };
 
   const onDelete = async (id: string) => {
+    pushDiagnostic("ui", `Delete requested for ${id}`);
     await runAction(id, async () => {
       await deleteDownload(id, false);
       const downloads = await listDownloads();
@@ -452,8 +532,11 @@ export default function App() {
       setSettingsBusy(true);
       const persisted = await saveSettings(next);
       setSettings(mergeWithDefaults(persisted));
+      pushDiagnostic("ui", "Settings saved");
     } catch (error) {
-      pushToast(`Failed to save settings: ${getErrorMessage(error)}`, "error");
+      const message = toFriendlyErrorMessage(error, "Failed to save settings.");
+      pushToast(`Failed to save settings: ${message}`, "error");
+      pushDiagnostic("system", `Settings save failed: ${message}`, "error");
     } finally {
       setSettingsBusy(false);
     }
@@ -466,7 +549,7 @@ export default function App() {
     let artifacts = settings.profiler.artifacts ?? null;
     let status = settings.profiler.status;
     let runId = settings.profiler.runId ?? null;
-    let message = available ? "Profiler API detected." : "Profiler integration requires quickget-agent profiler API.";
+    const message = available ? "Profiler API detected." : "Profiler integration requires quickget-agent profiler API.";
     if (available) {
       try {
         const state = await getProfilerStatus();
@@ -531,13 +614,14 @@ export default function App() {
     try {
       await runProfiler(request);
     } catch (error) {
+      const message = toFriendlyErrorMessage(error, "Profiler failed.");
       await onSettingsChange({
         ...settings,
         profiler: {
           ...settings.profiler,
           status: "error",
-          lastError: getErrorMessage(error),
-          message: getErrorMessage(error),
+          lastError: message,
+          message,
         },
       });
     }
@@ -556,13 +640,14 @@ export default function App() {
         },
       });
     } catch (error) {
+      const message = toFriendlyErrorMessage(error, "Profiler cancellation failed.");
       await onSettingsChange({
         ...settings,
         profiler: {
           ...settings.profiler,
           status: "error",
-          lastError: getErrorMessage(error),
-          message: getErrorMessage(error),
+          lastError: message,
+          message,
         },
       });
     }
@@ -578,10 +663,33 @@ export default function App() {
       setQuitBusy(true);
       await handleQuitAction(action);
       setShowQuitPrompt(false);
+      pushDiagnostic("ui", `Quit action executed: ${action}`);
     } catch (error) {
-      pushToast(`Quit action failed: ${getErrorMessage(error)}`, "error");
+      const message = toFriendlyErrorMessage(error, "Quit action failed.");
+      pushDiagnostic("system", `Quit action failed: ${message}`, "error");
+      pushToast(`Quit action failed: ${message}`, "error");
     } finally {
       setQuitBusy(false);
+    }
+  };
+
+  const onCopyDiagnostics = async () => {
+    try {
+      const report = formatDiagnosticsReport({
+        appName: APP_NAME,
+        appVersion: APP_VERSION,
+        agentState,
+        agentVersion: agentStatus?.version,
+        agentApiVersion: agentStatus?.api_version,
+        diagnostics,
+      });
+      await navigator.clipboard.writeText(report);
+      pushToast("Diagnostics copied", "success");
+      pushDiagnostic("ui", "Diagnostics copied to clipboard");
+    } catch (error) {
+      const message = toFriendlyErrorMessage(error, "Could not copy diagnostics.");
+      pushToast(message, "error");
+      pushDiagnostic("ui", `Diagnostics copy failed: ${message}`, "error");
     }
   };
 
@@ -609,6 +717,9 @@ export default function App() {
         onRestoreRecommended={onRestoreRecommended}
         forceShowDownloadsToken={forceShowDownloadsToken}
         onNotify={pushToast}
+        appVersion={APP_VERSION}
+        diagnostics={diagnostics}
+        onCopyDiagnostics={onCopyDiagnostics}
       />
       <Toasts items={toasts} onDismiss={dismissToast} />
       <QuitConfirmModal

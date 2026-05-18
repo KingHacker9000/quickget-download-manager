@@ -19,6 +19,15 @@ body {
   background: radial-gradient(circle at top left, #0f172a 0%, #020617 55%, #02040a 100%);
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
 @keyframes qdm-indeterminate {
   0% {
     transform: translateX(-120%);

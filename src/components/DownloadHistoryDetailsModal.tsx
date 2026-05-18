@@ -3,6 +3,7 @@ import type { DownloadSnapshot } from "../types/agent";
 import { formatBytes, formatDuration, formatSpeedMBps } from "../utils/format";
 import { StatusPill } from "./StatusPill";
 import { fileExists, openDownloadFile, openDownloadFolder } from "../api/fileActionsClient";
+import { mapFriendlyError } from "../utils/errorMessages";
 
 type Props = {
   open: boolean;
@@ -57,6 +58,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
     }
     return undefined;
   }, [download, durationMs]);
+  const friendlyError = mapFriendlyError(download?.error) ?? download?.error;
 
   useEffect(() => {
     if (!open || !outputPath) {
@@ -131,7 +133,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
           </div>
           <div className="flex items-center gap-3">
             <StatusPill state={download.state} />
-            <button type="button" className="rounded-md px-2 py-1 text-xs text-slate-300 hover:bg-slate-800" onClick={onClose}>Close</button>
+            <button type="button" className="rounded-md px-2 py-1 text-xs text-slate-300 hover:bg-slate-800" onClick={onClose} aria-label="Close download details">Close</button>
           </div>
         </header>
 
@@ -145,7 +147,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
           <p className="text-xs text-slate-300"><span className="text-slate-500">Completed:</span> {displayTime(completedAt)}</p>
           <p className="text-xs text-slate-300"><span className="text-slate-500">Time taken:</span> {typeof durationMs === "number" ? formatDurationMs(durationMs) : formatDuration(download.created_at, completedAt)}</p>
           <p className="text-xs text-slate-300"><span className="text-slate-500">Avg speed:</span> {formatSpeedMBps(averageSpeed)}</p>
-          {download.error && <p className="text-xs text-rose-200"><span className="text-rose-300">Error:</span> {download.error}</p>}
+          {friendlyError && <p className="text-xs text-rose-200"><span className="text-rose-300">Error:</span> {friendlyError}</p>}
         </div>
 
         <div className="border-t border-slate-700 px-4 py-4">
@@ -155,6 +157,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
               disabled={!canUseFile || checkingExists || busyAction !== null}
               onClick={() => void runAction("open", async () => openDownloadFile(outputPath!))}
               className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 disabled:opacity-40"
+              aria-label="Open downloaded file"
             >
               Open File
             </button>
@@ -163,10 +166,11 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
               disabled={(!canUseFile && !downloadFolder) || checkingExists || busyAction !== null}
               onClick={() => void runAction("folder", async () => openDownloadFolder(outputPath ?? downloadFolder ?? ""))}
               className="rounded-lg border border-slate-600 px-3 py-2 text-xs text-slate-100 hover:bg-slate-800 disabled:opacity-40"
+              aria-label="Open download folder"
             >
               Open Folder
             </button>
-            <button type="button" onClick={() => void onCopyPath()} className="rounded-lg border border-cyan-500/40 px-3 py-2 text-xs text-cyan-200 hover:bg-cyan-500/10">
+            <button type="button" onClick={() => void onCopyPath()} className="rounded-lg border border-cyan-500/40 px-3 py-2 text-xs text-cyan-200 hover:bg-cyan-500/10" aria-label="Copy file path">
               Copy Path
             </button>
           </div>

@@ -31,6 +31,7 @@ export function Toasts({ items, onDismiss }: Props) {
               type="button"
               onClick={() => onDismiss(toast.id)}
               className="shrink-0 rounded px-1 text-xs font-semibold text-slate-200 hover:bg-white/10"
+              aria-label="Dismiss notification"
             >
               Close
             </button>

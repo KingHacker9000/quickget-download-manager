@@ -7,7 +7,7 @@ type Props = {
   children: ReactNode;
 };
 
-const navItems: NavItem[] = ["Downloads", "History", "Profiler", "Settings"];
+const navItems: NavItem[] = ["Downloads", "History", "Profiler", "Settings", "Diagnostics", "About"];
 
 export function AppShell({ activeSection, onSectionChange, children }: Props) {
   return (

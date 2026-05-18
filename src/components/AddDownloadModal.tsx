@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CreateDownloadRequest } from "../types/agent";
 import type { AppSettings } from "../types/settings";
+import { mapFriendlyError } from "../utils/errorMessages";
 
 type Props = {
   open: boolean;
@@ -64,7 +65,7 @@ export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, settings
       onClose();
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "Unable to create download";
-      setError(message);
+      setError(mapFriendlyError(message) ?? message);
     } finally {
       setBusy(false);
     }
@@ -75,49 +76,59 @@ export function AddDownloadModal({ open: isOpen, canSubmit, initialUrl, settings
       <form onSubmit={submit} className="w-full max-w-xl rounded-2xl border border-slate-700/70 bg-slate-900/95 p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-100">Add Download</h2>
-          <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100">
+          <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100" aria-label="Close add download dialog">
             Esc
           </button>
         </div>
 
         <div className="space-y-3">
+          <label htmlFor="add-download-url" className="sr-only">Download URL</label>
           <input
+            id="add-download-url"
             value={url}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://example.com/file.zip"
             className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-500 focus:ring"
+            aria-label="Download URL"
           />
 
           <div className="flex gap-2">
+            <label htmlFor="add-download-output-dir" className="sr-only">Output folder</label>
             <input
+              id="add-download-output-dir"
               value={outputDir}
               onChange={(event) => setOutputDir(event.target.value)}
               placeholder="Save folder"
               className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-500 focus:ring"
+              aria-label="Output folder"
             />
-            <button type="button" onClick={() => void pickFolder()} className="rounded-xl border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800">
+            <button type="button" onClick={() => void pickFolder()} className="rounded-xl border border-slate-600 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800" aria-label="Browse for output folder">
               Browse
             </button>
           </div>
 
+          <label htmlFor="add-download-filename" className="sr-only">Filename</label>
           <input
+            id="add-download-filename"
             value={filename}
             onChange={(event) => setFilename(event.target.value)}
             placeholder="Filename (optional)"
             className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none ring-blue-500/40 placeholder:text-slate-500 focus:ring"
+            aria-label="Filename (optional)"
           />
 
           {error && <p className="rounded-lg bg-rose-500/15 px-3 py-2 text-sm text-rose-200">{error}</p>}
         </div>
 
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" aria-label="Cancel add download">
             Cancel
           </button>
           <button
             type="submit"
             disabled={!canSubmit || busy}
             className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Start download"
           >
             {busy ? "Starting..." : "Start Download"}
           </button>

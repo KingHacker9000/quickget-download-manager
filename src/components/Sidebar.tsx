@@ -1,4 +1,4 @@
-type NavItem = "Downloads" | "History" | "Profiler" | "Settings";
+type NavItem = "Downloads" | "History" | "Profiler" | "Settings" | "Diagnostics" | "About";
 
 type Props = {
   items: NavItem[];
@@ -18,8 +18,9 @@ export function Sidebar({ items, active, onSelect }: Props) {
               key={item}
               type="button"
               onClick={() => onSelect(item)}
+              aria-label={`Open ${item}`}
               className={[
-                "flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm transition",
+                "flex w-full items-center justify-start rounded-xl px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
                 isActive
                   ? "bg-gradient-to-r from-blue-500/30 to-cyan-400/20 text-slate-100"
                   : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200",

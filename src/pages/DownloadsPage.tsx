@@ -7,6 +7,8 @@ import { DownloadHistoryDetailsModal } from "../components/DownloadHistoryDetail
 import type { NavItem } from "../components/Sidebar";
 import { SettingsPage } from "./SettingsPage";
 import { ProfilerPage } from "./ProfilerPage";
+import { DiagnosticsPage } from "./DiagnosticsPage";
+import { AboutPage } from "./AboutPage";
 import type { RunProfilerRequest } from "../api/agentClient";
 import type {
   AgentConnectionState,
@@ -15,6 +17,8 @@ import type {
   DownloadSnapshot,
 } from "../types/agent";
 import type { AppSettings } from "../types/settings";
+import type { DiagnosticEntry } from "../utils/diagnostics";
+import { mapFriendlyError } from "../utils/errorMessages";
 
 type Props = {
   agentState: AgentConnectionState;
@@ -38,6 +42,9 @@ type Props = {
   onRestoreRecommended: () => void;
   forceShowDownloadsToken: number;
   onNotify: (message: string, tone?: "info" | "success" | "error") => void;
+  appVersion: string;
+  diagnostics: DiagnosticEntry[];
+  onCopyDiagnostics: () => Promise<void>;
 };
 
 function connectionText(state: AgentConnectionState, status: AgentStatus | null): string {
@@ -55,17 +62,6 @@ function connectionBadgeClass(state: AgentConnectionState): string {
   if (state === "starting") return "border-blue-400/40 bg-blue-500/20 text-blue-200";
   if (state === "disconnected") return "border-amber-400/40 bg-amber-500/20 text-amber-200";
   return "border-rose-400/40 bg-rose-500/20 text-rose-200";
-}
-
-function mapFriendlyError(message: string | null): string | null {
-  if (!message) return null;
-  const lower = message.toLowerCase();
-  if (lower.includes("429") || lower.includes("rate")) return "Server rate-limited this request. Try again shortly.";
-  if (lower.includes("range") && lower.includes("unsupported")) return "Range not supported by source. Using fallback path.";
-  if (lower.includes("disk") || lower.includes("write") || lower.includes("file")) return "Disk/file write error. Check permissions and free space.";
-  if (lower.includes("network") || lower.includes("timed out") || lower.includes("fetch")) return "Network request failed. Check connectivity.";
-  if (lower.includes("disconnected") || lower.includes("unable to connect")) return "quickget-agent disconnected.";
-  return message;
 }
 
 function EmptyState({ title, hint }: { title: string; hint: string }) {
@@ -99,6 +95,9 @@ export function DownloadsPage({
   onRestoreRecommended,
   forceShowDownloadsToken,
   onNotify,
+  appVersion,
+  diagnostics,
+  onCopyDiagnostics,
 }: Props) {
   const [activeSection, setActiveSection] = useState<NavItem>("Downloads");
   const [modalOpen, setModalOpen] = useState(false);
@@ -170,7 +169,11 @@ export function DownloadsPage({
               <span className="text-xs text-slate-500">{activeDownloads.length}</span>
             </div>
             {activeDownloads.length === 0 ? (
-              <EmptyState title="No active downloads" hint="Paste a URL above or press Ctrl+V to add one." />
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-4">
+                <p className="text-sm font-semibold text-slate-100">Paste a download URL to get started</p>
+                <p className="mt-1 text-xs text-slate-400">Downloads continue in the tray after you close the main window.</p>
+                <p className="mt-1 text-xs text-slate-500">QDM v0.1.0-alpha is Windows-first and still early; rough edges are expected.</p>
+              </div>
             ) : (
               activeDownloads.map((download) => (
                 <DownloadRow
@@ -191,6 +194,7 @@ export function DownloadsPage({
               type="button"
               onClick={() => setCompletedOpen((current) => !current)}
               className="mb-2 flex w-full items-center justify-between rounded-xl border border-slate-700/70 bg-slate-800/40 px-3 py-2 text-left"
+              aria-label={completedOpen ? "Hide completed downloads" : "Show completed downloads"}
             >
               <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Completed</span>
               <span className="text-xs text-slate-500">{recentCompletedDownloads.length} {completedOpen ? "-" : "+"}</span>
@@ -268,6 +272,10 @@ export function DownloadsPage({
             ))
           )}
         </section>
+      ) : activeSection === "Diagnostics" ? (
+        <DiagnosticsPage diagnostics={diagnostics} onCopyDiagnostics={onCopyDiagnostics} />
+      ) : activeSection === "About" ? (
+        <AboutPage appVersion={appVersion} agentStatus={agentStatus} />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
           {activeSection} section is reserved for upcoming releases.

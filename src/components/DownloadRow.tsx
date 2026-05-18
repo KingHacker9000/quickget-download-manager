@@ -3,6 +3,7 @@ import type { DownloadSnapshot } from "../types/agent";
 import { formatBytes, formatDuration, formatEta, formatEtaLabel, formatPercent, formatSpeedMBps } from "../utils/format";
 import { ProgressBar } from "./ProgressBar";
 import { StatusPill } from "./StatusPill";
+import { mapFriendlyError } from "../utils/errorMessages";
 
 type Props = {
   download: DownloadSnapshot;
@@ -57,6 +58,8 @@ export function DownloadRow({
       ? completedAt
       : undefined;
   const elapsed = formatDuration(download.created_at, elapsedEnd);
+  const friendlyWarning = mapFriendlyError(download.warning) ?? download.warning;
+  const friendlyError = mapFriendlyError(download.error) ?? download.error;
 
   useEffect(() => {
     if (!debugProgressEnabled) return;
@@ -82,6 +85,7 @@ export function DownloadRow({
             setExpanded((current) => !current);
           }}
           className="mt-1 rounded-md px-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+          aria-label={expanded ? "Collapse download details" : "Expand download details"}
         >
           {expanded ? "v" : ">"}
         </button>
@@ -100,6 +104,7 @@ export function DownloadRow({
                     totalBytes={download.total_bytes}
                     segments={segments}
                     indeterminate={indeterminate}
+                    label={`Download progress for ${download.filename ?? download.id}`}
                   />
                 </div>
                 <span className="min-w-36 text-right text-xs text-slate-300">{etaLabel}</span>
@@ -141,6 +146,7 @@ export function DownloadRow({
               }}
               disabled={busy}
               className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+              aria-label={`Pause ${download.filename ?? download.id}`}
             >
               Pause
             </button>
@@ -154,6 +160,7 @@ export function DownloadRow({
               }}
               disabled={busy}
               className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+              aria-label={`Resume ${download.filename ?? download.id}`}
             >
               Resume
             </button>
@@ -167,6 +174,7 @@ export function DownloadRow({
               }}
               disabled={busy}
               className="rounded-lg border border-amber-500/40 px-2 py-1 text-xs text-amber-200 hover:bg-amber-500/10 disabled:opacity-40"
+              aria-label={`Cancel ${download.filename ?? download.id}`}
             >
               Cancel
             </button>
@@ -180,6 +188,7 @@ export function DownloadRow({
               }}
               disabled={busy}
               className="rounded-lg border border-rose-500/40 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/10 disabled:opacity-40"
+              aria-label={`Delete ${download.filename ?? download.id}`}
             >
               Delete
             </button>
@@ -192,8 +201,8 @@ export function DownloadRow({
           <p><span className="text-slate-500">ID:</span> {download.id}</p>
           {download.output_path && <p><span className="text-slate-500">Output:</span> {download.output_path}</p>}
           {download.url && <p className="break-all"><span className="text-slate-500">URL:</span> {download.url}</p>}
-          {download.warning && <p className="text-amber-200">Warning: {download.warning}</p>}
-          {download.error && <p className="text-rose-200">Error: {download.error}</p>}
+          {friendlyWarning && <p className="text-amber-200">Warning: {friendlyWarning}</p>}
+          {friendlyError && <p className="text-rose-200">Error: {friendlyError}</p>}
           <p>
             <span className="text-slate-500">State:</span> {download.state}
             {download.updated_at ? ` | Updated: ${download.updated_at}` : ""}

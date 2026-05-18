@@ -1,6 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CreateDownloadRequest } from "../types/agent";
+import { mapFriendlyError } from "../utils/errorMessages";
 
 export type SpeedMode = "Auto" | "Balanced" | "Aggressive" | "Gentle";
 
@@ -60,7 +61,7 @@ export function AddDownloadForm({ canSubmit, defaultOutputDir, maxSimultaneousAv
       setUrl("");
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "Could not start download";
-      setError(message);
+      setError(mapFriendlyError(message) ?? message);
     } finally {
       setBusy(false);
     }
