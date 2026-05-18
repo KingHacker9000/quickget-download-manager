@@ -8,6 +8,16 @@ import { spawn } from "node:child_process";
 
 type QdmConfig = { quickgetRepo: string; quickgetAgentVersion: string; agentPort: number; agentHost: string };
 type PlatformInfo = { os: "windows" | "macos" | "linux"; arch: "x64" | "arm64"; tauriTarget: string; localAgentName: string; releaseHints: string[] };
+const githubToken = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? "";
+
+function githubHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "User-Agent": "qdm-fetch-agent",
+    Accept: "application/vnd.github+json",
+  };
+  if (githubToken) headers.Authorization = `Bearer ${githubToken}`;
+  return headers;
+}
 
 function getPlatformInfo(): PlatformInfo {
   const { platform, arch } = process;
@@ -58,7 +68,7 @@ async function findFileRecursive(root: string, targetNames: string[]): Promise<s
 async function downloadFromGithub(config: QdmConfig, info: PlatformInfo, outPath: string): Promise<{ releaseTag: string; assetName: string }> {
   const releasePath = config.quickgetAgentVersion === "latest" ? "latest" : `tags/${config.quickgetAgentVersion}`;
   const url = `https://api.github.com/repos/${config.quickgetRepo}/releases/${releasePath}`;
-  const releaseRes = await fetch(url, { headers: { "User-Agent": "qdm-fetch-agent" } });
+  const releaseRes = await fetch(url, { headers: githubHeaders() });
   if (!releaseRes.ok) throw new Error(`Failed to fetch release metadata (${releaseRes.status})`);
   const release = (await releaseRes.json()) as { tag_name?: string; assets: Array<{ browser_download_url: string; name: string }> };
 
@@ -72,7 +82,7 @@ async function downloadFromGithub(config: QdmConfig, info: PlatformInfo, outPath
   await mkdir(tempDir, { recursive: true });
   const archivePath = join(tempDir, asset.name);
 
-  const assetRes = await fetch(asset.browser_download_url, { headers: { "User-Agent": "qdm-fetch-agent" } });
+  const assetRes = await fetch(asset.browser_download_url, { headers: githubHeaders() });
   if (!assetRes.ok || !assetRes.body) throw new Error(`Failed to download asset (${assetRes.status})`);
   await pipeline(assetRes.body as unknown as NodeJS.ReadableStream, createWriteStream(archivePath));
 

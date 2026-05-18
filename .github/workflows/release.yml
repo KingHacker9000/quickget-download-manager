@@ -70,6 +70,8 @@ jobs:
         run: npm ci
 
       - name: Fetch quickget-agent binary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run fetch-agent
 
       - name: Build Tauri packages
@@ -80,7 +82,13 @@ jobs:
         with:
           name: qdm-${{ runner.os }}-${{ env.RELEASE_TAG }}
           path: |
-            src-tauri/target/release/bundle/**
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.app.tar.gz
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.AppImage
           if-no-files-found: error
 
   publish-release:
