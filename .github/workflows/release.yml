@@ -5,6 +5,14 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (example: v0.1.0-alpha)"
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
   build-release:
@@ -29,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -68,7 +78,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: qdm-${{ runner.os }}-${{ github.ref_name }}
+          name: qdm-${{ runner.os }}-${{ env.RELEASE_TAG }}
           path: |
             src-tauri/target/release/bundle/**
           if-no-files-found: error
@@ -88,7 +98,7 @@ jobs:
       - name: Publish release for tag
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           prerelease: true
           files: |
