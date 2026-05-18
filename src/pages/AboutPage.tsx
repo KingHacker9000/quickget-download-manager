@@ -54,7 +54,11 @@ export function AboutPage({ appVersion, agentStatus }: Props) {
           </li>
         </ul>
       </div>
+
+      <div className="rounded-xl border border-slate-700/70 bg-slate-900/40 p-4 text-xs text-slate-300">
+        <p><span className="text-slate-500">Platform support:</span> Windows-first desktop release.</p>
+        <p className="mt-1 text-slate-400">macOS/Linux artifacts may exist but remain experimental and untested.</p>
+      </div>
     </section>
   );
 }
-

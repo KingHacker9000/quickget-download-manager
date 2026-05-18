@@ -1,12 +1,12 @@
 # Releasing QDM
 
-QDM is currently in `v0.1.0-alpha` phase. Releases should be treated as pre-release quality.
+QDM is currently targeting stable `v0.1.0` releases.
 
 ## Tag-based release workflow
 
 The GitHub Actions release workflow runs when you push a tag matching:
 
-- `v*` (example: `v0.1.0-alpha`)
+- `v*` (example: `v0.1.0`)
 
 Workflow file:
 
@@ -24,13 +24,11 @@ Workflow file:
 ## Release command
 
 ```bash
-git tag v0.1.0-alpha
-git push origin v0.1.0-alpha
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
 ## Notes
 
-- Do not claim stable production quality for alpha releases.
 - Do not mark macOS/Linux artifacts as tested.
 - Windows remains the only actively tested platform at this stage.
-

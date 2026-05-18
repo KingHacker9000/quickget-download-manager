@@ -18,6 +18,12 @@ export function mapFriendlyError(message: string | null | undefined): string | n
   if (lower.includes("requires quickget-agent api v1") || lower.includes("unsupported agent api version")) {
     return REQUIRED_AGENT_API_MESSAGE;
   }
+  if (
+    lower.includes("quickget-agent") &&
+    (lower.includes("not found") || lower.includes("no such file") || lower.includes("cannot find"))
+  ) {
+    return "quickget-agent binary is missing. Reinstall or restore quickget-agent, then restart QDM.";
+  }
   if (lower.includes("429") || lower.includes("rate limit") || lower.includes("too many requests")) {
     return "The server is rate-limiting requests. Wait a moment and try again.";
   }
@@ -39,11 +45,15 @@ export function mapFriendlyError(message: string | null | undefined): string | n
     return "Network failure detected. Check connectivity and retry.";
   }
   if (
+    lower.includes("permission denied") ||
+    lower.includes("access is denied")
+  ) {
+    return "Permission denied. Choose a folder you can write to or run with the required access.";
+  }
+  if (
     lower.includes("disk") ||
     lower.includes("write") ||
-    lower.includes("permission denied") ||
-    lower.includes("no space left") ||
-    lower.includes("access is denied")
+    lower.includes("no space left")
   ) {
     return "Disk write failure. Check folder permissions and available free space.";
   }
@@ -71,4 +81,3 @@ export function toFriendlyErrorMessage(error: unknown, fallback: string): string
         : fallback;
   return mapFriendlyError(base) ?? fallback;
 }
-

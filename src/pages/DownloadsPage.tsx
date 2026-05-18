@@ -172,7 +172,7 @@ export function DownloadsPage({
               <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-4">
                 <p className="text-sm font-semibold text-slate-100">Paste a download URL to get started</p>
                 <p className="mt-1 text-xs text-slate-400">Downloads continue in the tray after you close the main window.</p>
-                <p className="mt-1 text-xs text-slate-500">QDM v0.1.0-alpha is Windows-first and still early; rough edges are expected.</p>
+                <p className="mt-1 text-xs text-slate-500">QDM v0.1.0 is Windows-first. macOS/Linux support remains experimental.</p>
               </div>
             ) : (
               activeDownloads.map((download) => (

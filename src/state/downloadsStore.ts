@@ -42,6 +42,46 @@ function cloneSnapshot(snapshot: DownloadSnapshot): DownloadSnapshot {
   };
 }
 
+function ensureSource(snapshot: DownloadSnapshot): DownloadSnapshot {
+  const metadata = snapshot.metadata ?? {};
+  const source = metadata.source;
+  if (typeof source === "string" && source.trim().length > 0) return snapshot;
+  return {
+    ...snapshot,
+    metadata: {
+      ...metadata,
+      source: "Agent",
+    },
+  };
+}
+
+function eventState(eventType: string, fallback: DownloadSnapshot["state"]): DownloadSnapshot["state"] {
+  if (eventType === "download.completed") return "completed";
+  if (eventType === "download.paused") return "paused";
+  if (eventType === "download.cancelled") return "cancelled";
+  if (eventType === "download.failed") return "failed";
+  if (eventType === "download.started" || eventType === "download.progress") return "downloading";
+  if (eventType === "download.created") return "queued";
+  return fallback;
+}
+
+function buildSnapshotFromEvent(event: AgentEvent): DownloadSnapshot | null {
+  if (!event.download_id) return null;
+  const sourceField =
+    event.data && typeof event.data.source === "string" && event.data.source.trim().length > 0
+      ? event.data.source
+      : "External";
+  return {
+    id: event.download_id,
+    state: eventState(event.type, "queued"),
+    created_at: event.timestamp,
+    updated_at: event.timestamp,
+    warning: event.type === "download.warning" ? event.message ?? null : undefined,
+    error: event.type === "download.failed" ? event.message ?? null : undefined,
+    metadata: { source: sourceField },
+  };
+}
+
 function withDerivedLists(next: Omit<DownloadsState, "activeIds" | "recentCompletedIds" | "historyIds" | "activeDownloads" | "recentCompletedDownloads" | "historyDownloads">): DownloadsState {
   const entries = Object.values(next.byId);
   const dayAgoMs = Date.now() - 24 * 60 * 60 * 1000;
@@ -88,7 +128,7 @@ function upsertInto(current: DownloadsState, snapshot: DownloadSnapshot): Downlo
       (mergedBase as Record<string, unknown>)[key as string] = value;
     }
   }
-  const merged = cloneSnapshot(mergedBase);
+  const merged = cloneSnapshot(ensureSource(mergedBase));
   const byId = { ...current.byId, [snapshot.id]: merged };
   return withDerivedLists({
     ...current,
@@ -123,7 +163,8 @@ export function replaceDownloads(downloads: DownloadSnapshot[]) {
   setState((current) => {
     const byId: Record<string, DownloadSnapshot> = {};
     for (const snapshot of downloads) {
-      byId[snapshot.id] = cloneSnapshot(snapshot);
+      if (!snapshot.id) continue;
+      byId[snapshot.id] = cloneSnapshot(ensureSource(snapshot));
     }
     return withDerivedLists({
       ...current,
@@ -133,7 +174,7 @@ export function replaceDownloads(downloads: DownloadSnapshot[]) {
 }
 
 export function applyEvent(event: AgentEvent) {
-  if (event.snapshot) {
+  if (event.snapshot && event.snapshot.id) {
     if (debugProgressEnabled && event.type === "download.progress") {
       console.debug("[QDM] store apply progress event", {
         id: event.download_id,
@@ -141,42 +182,20 @@ export function applyEvent(event: AgentEvent) {
         downloaded: event.snapshot.downloaded_bytes,
       });
     }
-    setState((current) => upsertInto(current, event.snapshot!));
+    const normalizedFromEvent: DownloadSnapshot = {
+      ...event.snapshot,
+      state: eventState(event.type, event.snapshot.state),
+      updated_at: event.timestamp ?? event.snapshot.updated_at,
+      warning: event.type === "download.warning" ? event.message ?? event.snapshot.warning : event.snapshot.warning,
+      error: event.type === "download.failed" ? event.message ?? event.snapshot.error : event.snapshot.error,
+    };
+    setState((current) => upsertInto(current, normalizedFromEvent));
     return;
   }
 
-  if (event.download_id && state.byId[event.download_id]) {
-    setState((current) => {
-      const existing = current.byId[event.download_id!];
-      if (!existing) return current;
-      const nextState =
-        event.type === "download.completed"
-          ? "completed"
-          : event.type === "download.paused"
-            ? "paused"
-            : event.type === "download.cancelled"
-              ? "cancelled"
-              : event.type === "download.failed"
-                ? "failed"
-                : event.type === "download.started" || event.type === "download.progress"
-                  ? "downloading"
-                  : existing.state;
-      const byId = {
-        ...current.byId,
-        [event.download_id!]: cloneSnapshot({
-          ...existing,
-          state: nextState,
-          updated_at: event.timestamp ?? existing.updated_at,
-          warning: event.type === "download.warning" ? event.message ?? existing.warning : existing.warning,
-          error: event.type === "download.failed" ? event.message ?? existing.error : existing.error,
-        }),
-      };
-      return withDerivedLists({
-        ...current,
-        byId,
-      });
-    });
-  }
+  const synthetic = buildSnapshotFromEvent(event);
+  if (!synthetic) return;
+  setState((current) => upsertInto(current, synthetic));
 }
 
 function subscribe(listener: () => void) {

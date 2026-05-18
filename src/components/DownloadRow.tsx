@@ -60,6 +60,7 @@ export function DownloadRow({
   const elapsed = formatDuration(download.created_at, elapsedEnd);
   const friendlyWarning = mapFriendlyError(download.warning) ?? download.warning;
   const friendlyError = mapFriendlyError(download.error) ?? download.error;
+  const source = typeof download.metadata?.source === "string" && download.metadata.source.trim().length > 0 ? download.metadata.source : "Agent";
 
   useEffect(() => {
     if (!debugProgressEnabled) return;
@@ -94,6 +95,9 @@ export function DownloadRow({
             <p className="truncate text-sm font-medium text-slate-100">{download.filename ?? download.url ?? download.id}</p>
             <StatusPill state={download.state} />
           </div>
+          <p className="mt-1 truncate text-xs text-slate-400">
+            Save to: <span className="text-slate-300">{download.output_path ?? "Automatic location"}</span>
+          </p>
 
           {!isCompleted && (
             <div className="mt-2 space-y-2">
@@ -110,12 +114,12 @@ export function DownloadRow({
                 <span className="min-w-36 text-right text-xs text-slate-300">{etaLabel}</span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-400 md:grid-cols-6">
-                <span>{formatPercent(progress)}</span>
-                <span>{formatSpeedMBps(effectiveSpeed)}</span>
-                <span>{etaText}</span>
+                <span>Progress: {formatPercent(progress)}</span>
+                <span>Speed: {formatSpeedMBps(effectiveSpeed)}</span>
+                <span>ETA: {etaText}</span>
                 <span>Elapsed: {elapsed}</span>
-                <span>{formatBytes(download.downloaded_bytes)}</span>
-                <span>{formatBytes(download.total_bytes)}</span>
+                <span>Downloaded: {formatBytes(download.downloaded_bytes)}</span>
+                <span>Total: {formatBytes(download.total_bytes)}</span>
               </div>
               {segments.length > 0 && (
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-500 md:grid-cols-4">
@@ -199,6 +203,7 @@ export function DownloadRow({
       {expanded && (
         <div className="mt-3 grid gap-1 border-t border-slate-700/70 pt-2 text-xs text-slate-400">
           <p><span className="text-slate-500">ID:</span> {download.id}</p>
+          <p><span className="text-slate-500">Source:</span> {source}</p>
           {download.output_path && <p><span className="text-slate-500">Output:</span> {download.output_path}</p>}
           {download.url && <p className="break-all"><span className="text-slate-500">URL:</span> {download.url}</p>}
           {friendlyWarning && <p className="text-amber-200">Warning: {friendlyWarning}</p>}

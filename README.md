@@ -2,33 +2,38 @@
 
 ![CI](https://github.com/OWNER/QuickGet_Download_Manager/actions/workflows/ci.yml/badge.svg)
 ![Release](https://github.com/OWNER/QuickGet_Download_Manager/actions/workflows/release.yml/badge.svg)
-![License](https://img.shields.io/badge/license-TBD-lightgrey.svg)
+![Version](https://img.shields.io/badge/version-v0.1.0-22c55e.svg)
+![Platform](https://img.shields.io/badge/platform-Windows--first-0ea5e9.svg)
 
-QuickGet Download Manager (QDM) is currently `v0.1.0-alpha`.
-It is a Windows-first alpha desktop application built with Tauri v2, React, TypeScript, Vite, and Tailwind CSS.
+Desktop UI for managing downloads powered by `quickget-agent`.
 
-If you fork this repository, replace `OWNER/QuickGet_Download_Manager` in the badge URLs above.
+QDM `v0.1.0` is a Windows-first release built with Tauri v2, React, TypeScript, Vite, and Tailwind CSS.
 
-## Status (`v0.1.0-alpha`)
+If you fork this repo, replace `OWNER/QuickGet_Download_Manager` in the badge URLs.
 
-- Alpha quality, not a stable release.
-- Primary tested platform: Windows.
-- macOS/Linux build outputs may exist but are untested and experimental.
-- Full cross-platform support is not claimed yet.
+## Why QDM
 
-## QuickGet backend / CLI repository
+- Clean desktop workflow for creating and controlling QuickGet downloads
+- Live download status with pause/resume/cancel/delete controls
+- Tray/background operation while downloads continue
+- Friendly error handling for common agent/network/runtime failures
 
-QDM relies on `quickget-agent` from the QuickGet backend repository:
+## Status
+
+- Stable `v0.1.0` release
+- Primary tested platform: Windows
+- macOS/Linux artifacts may exist but are currently experimental and untested
+- Full cross-platform support is not claimed yet
+
+Chrome extension download capture is planned next. QDM `v0.1.0` is prepared to display downloads created through `quickget-agent`, but the extension is not included yet.
+
+## Architecture
+
+QDM relies on `quickget-agent` from the QuickGet backend/CLI repository:
 
 - https://github.com/KingHacker9000/quickget
 
-## Platform support
-
-See:
-
-- [docs/platform-support.md](docs/platform-support.md)
-
-## Development
+## Quick Start
 
 Install dependencies:
 
@@ -36,33 +41,25 @@ Install dependencies:
 npm ci
 ```
 
-Run Tauri dev with a release-fetched sidecar:
-
-```bash
-npm run tauri:dev
-```
-
-Run Tauri dev with a local sibling `QuickGet_CLI` sidecar:
-
-```bash
-npm run dev:local-agent
-```
-
-## Fetch quickget-agent
-
-Download and prepare the sidecar binary:
+Fetch `quickget-agent` sidecar:
 
 ```bash
 npm run fetch-agent
 ```
 
-Use local sibling backend binary instead of GitHub Releases:
+Run desktop app (release-fetched sidecar):
 
 ```bash
-QDM_USE_LOCAL_AGENT=1 npm run fetch-agent
+npm run tauri:dev
 ```
 
-## Build (Windows app)
+Run desktop app with local sibling `QuickGet_CLI` sidecar:
+
+```bash
+npm run dev:local-agent
+```
+
+## Build
 
 Build frontend:
 
@@ -76,10 +73,12 @@ Build desktop installer/package:
 npm run tauri:build
 ```
 
-Windows is the only actively tested target for this alpha.
-macOS/Linux artifacts are experimental and currently untested.
+Windows is the only actively tested target for `v0.1.0`.
+macOS/Linux artifacts remain experimental.
 
-## CI and release docs
+## Docs
 
-- [docs/building.md](docs/building.md)
-- [docs/releasing.md](docs/releasing.md)
+- Platform support: [docs/platform-support.md](docs/platform-support.md)
+- Build details: [docs/building.md](docs/building.md)
+- Release process: [docs/releasing.md](docs/releasing.md)
+

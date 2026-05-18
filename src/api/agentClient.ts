@@ -70,6 +70,10 @@ function mapStatus(status: string | undefined): DownloadSnapshot["state"] {
 function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
   const outputPath = asString(raw.outputPath);
   const speedMBps = asNumber(raw.speedMBps);
+  const metadata =
+    raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+      ? (raw.metadata as Record<string, unknown>)
+      : undefined;
   const rawSegments = Array.isArray(raw.segments) ? raw.segments : [];
   const segments: SegmentProgress[] = rawSegments
     .map((entry): SegmentProgress | null => {
@@ -103,7 +107,7 @@ function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
   return {
     id: asString(raw.id) ?? "",
     url: asString(raw.url),
-    filename: outputPath?.split(/[\\/]/).pop(),
+    filename: asString(raw.filename) ?? outputPath?.split(/[\\/]/).pop(),
     output_path: outputPath,
     state: mapStatus(asString(raw.status)),
     total_bytes: asNumber(raw.total),
@@ -115,6 +119,7 @@ function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
     created_at: asString(raw.createdAt),
     updated_at: asString(raw.updatedAt),
     completed_at: asString(raw.completedAt) ?? null,
+    metadata,
     connections: asNumber(raw.connections),
     active_jobs: asNumber(raw.activeJobs),
     mutations: asNumber(raw.mutations),

@@ -1,6 +1,6 @@
 # Building QDM
 
-This project currently targets `v0.1.0-alpha` and is Windows-first.
+This project currently targets `v0.1.0` and is Windows-first.
 
 ## Prerequisites
 
@@ -45,6 +45,5 @@ QDM_USE_LOCAL_AGENT=1 npm run fetch-agent
 npm run tauri:build
 ```
 
-On Windows this produces tested alpha artifacts.
+On Windows this produces tested release artifacts for `v0.1.0`.
 macOS/Linux artifacts are currently experimental and untested.
-

@@ -59,6 +59,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
     return undefined;
   }, [download, durationMs]);
   const friendlyError = mapFriendlyError(download?.error) ?? download?.error;
+  const source = typeof download?.metadata?.source === "string" && download.metadata.source.trim().length > 0 ? download.metadata.source : "Agent";
 
   useEffect(() => {
     if (!open || !outputPath) {
@@ -139,6 +140,7 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
 
         <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
           <p className="text-xs text-slate-300"><span className="text-slate-500">URL:</span> <span className="break-all">{download.url ?? "--"}</span></p>
+          <p className="text-xs text-slate-300"><span className="text-slate-500">Source:</span> {source}</p>
           <p className="text-xs text-slate-300"><span className="text-slate-500">File size:</span> {formatBytes(download.total_bytes ?? download.downloaded_bytes)}</p>
           <p className="text-xs text-slate-300"><span className="text-slate-500">Download folder:</span> {downloadFolder ?? "--"}</p>
           <p className="text-xs text-slate-300"><span className="text-slate-500">Connections:</span> {download.connections ?? "--"} / Segments: {download.segments?.length ?? "--"}</p>

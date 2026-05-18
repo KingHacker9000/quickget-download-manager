@@ -1,4 +1,4 @@
-# QDM v0.1.0-alpha Checklist
+# QDM v0.1.0 Release Checklist
 
 1. Start `quickget-agent` (or launch QDM and verify it auto-starts).
 2. Add a download URL from the Downloads screen.
@@ -9,4 +9,3 @@
 7. Restart QDM.
 8. Verify previous jobs are still visible in History/Downloads.
 9. Test the Windows installer flow (install, launch, uninstall path).
-

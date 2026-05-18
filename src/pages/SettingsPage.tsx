@@ -91,6 +91,14 @@ export function SettingsPage({ settings, busy, onChange, onRunProfiler, onRefres
         onOpenProfilerTab={onOpenProfilerTab}
       />
 
+      <SettingsSection title="Browser Capture" description="Planned integration path for browser-originated downloads.">
+        <div className="rounded-lg border border-slate-700 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
+          <p><span className="text-slate-400">Status:</span> Not installed yet</p>
+          <p className="mt-1 text-xs text-slate-300">Chrome extension support is planned after v0.1.0.</p>
+          <p className="mt-1 text-xs text-slate-400">QDM is already prepared to display downloads created through quickget-agent.</p>
+        </div>
+      </SettingsSection>
+
       <SettingsSection title="Advanced" description="Raw QuickGet flags for power users.">
         <button type="button" className="rounded-lg border border-slate-600 px-3 py-2 text-sm text-slate-200" onClick={() => setAdvancedOpen((v) => !v)}>
           {advancedOpen ? "Hide advanced settings" : "Show advanced settings"}
