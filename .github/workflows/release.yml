@@ -69,12 +69,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Fetch quickget-agent binary
+      - name: Build Tauri packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run fetch-agent
-
-      - name: Build Tauri packages
         run: npm run tauri:build
 
       - name: Upload release artifacts
