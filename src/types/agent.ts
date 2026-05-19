@@ -8,6 +8,12 @@ export type AgentStatus = {
   message: string;
 };
 
+export type QdmRuntimeBuildInfo = {
+  app_version: string;
+  backend_build_commit: string;
+  backend_build_unix: string;
+};
+
 export type AgentConnectionState = "starting" | "connected" | "failed" | "disconnected";
 
 export type CreateDownloadRequest = {

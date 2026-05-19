@@ -52,12 +52,20 @@ export function formatDiagnosticsReport(input: {
   agentState: string;
   agentVersion?: string | null;
   agentApiVersion?: string | null;
+  frontendBuildCommit?: string | null;
+  frontendBuildTime?: string | null;
+  backendBuildCommit?: string | null;
+  backendBuildUnix?: string | null;
   diagnostics: DiagnosticEntry[];
 }): string {
   const payload = {
     app: {
       name: input.appName,
       version: input.appVersion,
+      frontendBuildCommit: input.frontendBuildCommit ?? null,
+      frontendBuildTime: input.frontendBuildTime ?? null,
+      backendBuildCommit: input.backendBuildCommit ?? null,
+      backendBuildUnix: input.backendBuildUnix ?? null,
     },
     agent: {
       state: input.agentState,
@@ -69,4 +77,3 @@ export function formatDiagnosticsReport(input: {
   };
   return JSON.stringify(payload, null, 2);
 }
-

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { AGENT_HOST, AGENT_PORT } from "./agentConfig";
 import type {
   AgentErrorResponse,
@@ -14,6 +15,7 @@ import type {
 export const AGENT_BASE_URL = `http://${AGENT_HOST}:${AGENT_PORT}`;
 const AGENT_DEV_PROXY_BASE = "/agent";
 const AGENT_FETCH_BASE = import.meta.env.DEV ? AGENT_DEV_PROXY_BASE : AGENT_BASE_URL;
+const USE_TAURI_HTTP_FALLBACK = !import.meta.env.DEV;
 
 const HEALTH_PATH = "/health";
 const DOWNLOADS_PATH = "/downloads";
@@ -72,8 +74,9 @@ function mapStatus(status: string | undefined): DownloadSnapshot["state"] {
 }
 
 function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
-  const outputPath = asString(raw.outputPath);
+  const outputPath = asString(raw.outputPath) ?? asString(raw.output_path);
   const speedMBps = asNumber(raw.speedMBps);
+  const avgMBps = asNumber(raw.avgMBps) ?? asNumber(raw.avg_mbps);
   const metadata =
     raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
       ? (raw.metadata as Record<string, unknown>)
@@ -108,22 +111,45 @@ function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
     })
     .filter((segment): segment is SegmentProgress => segment != null);
 
+  const createdAt = asString(raw.createdAt) ?? asString(raw.created_at);
+  const completedAt = asString(raw.completedAt) ?? asString(raw.completed_at) ?? null;
+  const totalBytes = asNumber(raw.total);
+  const downloadedBytes = asNumber(raw.downloaded);
+  const meta: Record<string, unknown> = { ...(metadata ?? {}) };
+  if (typeof avgMBps === "number" && Number.isFinite(avgMBps) && avgMBps >= 0) {
+    meta.averageSpeedBytesPerSec = avgMBps * 1024 * 1024;
+  }
+  if (createdAt && completedAt) {
+    const startMs = Date.parse(createdAt);
+    const endMs = Date.parse(completedAt);
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
+      meta.startedAt = createdAt;
+      meta.durationMs = endMs - startMs;
+      if (meta.averageSpeedBytesPerSec == null) {
+        const basis = totalBytes ?? downloadedBytes;
+        if (typeof basis === "number" && basis > 0 && endMs > startMs) {
+          meta.averageSpeedBytesPerSec = (basis * 1000) / (endMs - startMs);
+        }
+      }
+    }
+  }
+
   return {
     id: asString(raw.id) ?? "",
     url: asString(raw.url),
-    filename: asString(raw.filename) ?? outputPath?.split(/[\\/]/).pop(),
+    filename: asString(raw.filename) ?? asString(raw.fileName) ?? outputPath?.split(/[\\/]/).pop(),
     output_path: outputPath,
     state: mapStatus(asString(raw.status)),
-    total_bytes: asNumber(raw.total),
-    downloaded_bytes: asNumber(raw.downloaded),
+    total_bytes: totalBytes,
+    downloaded_bytes: downloadedBytes,
     speed_bytes_per_sec: speedMBps != null ? speedMBps * 1024 * 1024 : undefined,
     progress_percent: normalizePercent(asNumber(raw.percent)),
     warning: undefined,
     error: asString(raw.error),
-    created_at: asString(raw.createdAt),
-    updated_at: asString(raw.updatedAt),
-    completed_at: asString(raw.completedAt) ?? null,
-    metadata,
+    created_at: createdAt,
+    updated_at: asString(raw.updatedAt) ?? asString(raw.updated_at),
+    completed_at: completedAt,
+    metadata: Object.keys(meta).length > 0 ? meta : undefined,
     connections: asNumber(raw.connections),
     active_jobs: asNumber(raw.activeJobs),
     mutations: asNumber(raw.mutations),
@@ -132,32 +158,65 @@ function normalizeSnapshot(raw: AgentApiDownload): DownloadSnapshot {
 }
 
 function normalizeCapture(raw: AgentApiCapture): CaptureSnapshot {
+  const requestRaw = raw.request && typeof raw.request === "object" ? (raw.request as Record<string, unknown>) : {};
   const sourceRaw = raw.source && typeof raw.source === "object" ? (raw.source as Record<string, unknown>) : {};
+  const duplicateInfoRaw =
+    raw.duplicate_info && typeof raw.duplicate_info === "object" ? (raw.duplicate_info as Record<string, unknown>) : {};
   const duplicateRaw =
-    raw.duplicate && typeof raw.duplicate === "object" ? (raw.duplicate as Record<string, unknown>) : {};
+    raw.duplicate && typeof raw.duplicate === "object" ? (raw.duplicate as Record<string, unknown>) : duplicateInfoRaw;
   const metadata =
     raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
       ? (raw.metadata as Record<string, unknown>)
       : undefined;
+  const status = asString(raw.status) ?? asString(raw.state) ?? "pending";
+  const duplicateFound = duplicateInfoRaw.found === true;
+  const effectiveState = status === "pending" && duplicateFound ? "duplicate" : status;
+  const requestedFilename = asString(requestRaw.suggested_filename) ?? asString(requestRaw.suggestedFilename);
+  const derivedFilenameFromUrl = (() => {
+    const url = asString(raw.url) ?? asString(requestRaw.url);
+    if (!url) return undefined;
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      return parts.length > 0 ? decodeURIComponent(parts[parts.length - 1]) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const requestedPageUrl = asString(requestRaw.page_url) ?? asString(requestRaw.pageUrl);
+  const requestedReferrer = asString(requestRaw.referrer);
+  const requestedDomain = (() => {
+    const url = requestedPageUrl ?? requestedReferrer;
+    if (!url) return undefined;
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return undefined;
+    }
+  })();
   return {
     id: asString(raw.id) ?? "",
-    state: asString(raw.state) ?? "pending",
-    url: asString(raw.url),
-    suggested_filename: asString(raw.suggestedFilename) ?? asString(raw.filename),
+    state: effectiveState,
+    url: asString(raw.url) ?? asString(requestRaw.url),
+    suggested_filename: asString(raw.suggestedFilename) ?? asString(raw.filename) ?? requestedFilename ?? derivedFilenameFromUrl,
     output_dir: asString(raw.outputDir) ?? asString(raw.directory),
     output_path: asString(raw.outputPath),
     speed_mode: asString(raw.speedMode) === "manual" ? "manual" : "auto",
     source: {
-      page_url: asString(sourceRaw.pageUrl) ?? asString(raw.pageUrl),
-      referrer: asString(sourceRaw.referrer) ?? asString(raw.referrer),
-      domain: asString(sourceRaw.domain) ?? asString(raw.domain),
+      page_url: asString(sourceRaw.pageUrl) ?? asString(raw.pageUrl) ?? requestedPageUrl,
+      referrer: asString(sourceRaw.referrer) ?? asString(raw.referrer) ?? requestedReferrer,
+      domain: asString(sourceRaw.domain) ?? asString(raw.domain) ?? requestedDomain,
       user_agent: asString(sourceRaw.userAgent),
       authenticated: typeof sourceRaw.authenticated === "boolean" ? sourceRaw.authenticated : undefined,
     },
     duplicate: {
       reason: asString(duplicateRaw.reason),
-      existing_path: asString(duplicateRaw.existingPath) ?? asString(raw.existingPath),
-      existing_download_id: asString(duplicateRaw.existingDownloadId),
+      existing_path:
+        asString(duplicateRaw.existingPath) ??
+        asString(raw.existingPath) ??
+        asString(duplicateInfoRaw.existing_output_path),
+      existing_download_id:
+        asString(duplicateRaw.existingDownloadId) ?? asString(duplicateInfoRaw.existing_download_id),
     },
     metadata,
     created_at: asString(raw.createdAt),
@@ -234,10 +293,19 @@ async function request<T>(path: string, init: RequestInit = {}, requireAuth = tr
     ? { ...(await authHeaders()), ...(init.headers ?? {}) }
     : { ...(init.headers ?? {}) };
 
-  const res = await fetch(`${AGENT_FETCH_BASE}${path}`, {
-    ...init,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${AGENT_FETCH_BASE}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    if (!USE_TAURI_HTTP_FALLBACK) throw error;
+    res = await tauriFetch(`${AGENT_FETCH_BASE}${path}`, {
+      ...init,
+      headers,
+    });
+  }
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
@@ -321,10 +389,9 @@ export async function deleteDownload(id: string, deleteFiles = false): Promise<v
 
 function mapStartCapturePayload(payload: StartCaptureRequest): Record<string, unknown> {
   return {
-    ...(payload.output_dir ? { outputDir: payload.output_dir } : {}),
-    ...(payload.filename ? { filename: payload.filename } : {}),
-    ...(payload.speed_mode ? { speedMode: payload.speed_mode } : {}),
-    ...(payload.duplicate_action ? { duplicateAction: payload.duplicate_action } : {}),
+    ...(payload.output_dir ? { directory: payload.output_dir } : {}),
+    ...(payload.filename ? { output_path: payload.filename } : {}),
+    ...(payload.duplicate_action ? { duplicate_action: payload.duplicate_action } : {}),
   };
 }
 
@@ -347,11 +414,15 @@ export async function rejectCapture(id: string): Promise<CaptureSnapshot> {
 }
 
 export async function startCaptureDownload(id: string, payload: StartCaptureRequest): Promise<CaptureSnapshot> {
-  const response = await request<AgentApiCapture>(`${CAPTURES_PATH}/${encodeURIComponent(id)}/start`, {
+  const response = await request<AgentApiCapture | { capture?: AgentApiCapture }>(`${CAPTURES_PATH}/${encodeURIComponent(id)}/start`, {
     method: "POST",
     body: JSON.stringify(mapStartCapturePayload(payload)),
   });
-  return normalizeCapture(response);
+  const captureRaw =
+    response && typeof response === "object" && "capture" in response
+      ? ((response as { capture?: AgentApiCapture }).capture ?? {})
+      : (response as AgentApiCapture);
+  return normalizeCapture(captureRaw);
 }
 
 export async function checkProfilerApiAvailable(): Promise<boolean> {
@@ -414,8 +485,15 @@ function parseSseEvent(frame: string): AgentEvent | null {
   try {
     const raw = JSON.parse(payload) as AgentApiEvent;
     const eventId = asString(raw.id);
+    const eventType = typeof raw.type === "string" ? raw.type : "unknown";
+    const isDownloadEvent = eventType.startsWith("download.");
+    const nestedDownloadId =
+      raw.data && typeof raw.data === "object"
+        ? asString((raw.data as Record<string, unknown>).download_id) ??
+          asString((raw.data as Record<string, unknown>).downloadId)
+        : undefined;
     const snapshot =
-      eventId != null
+      isDownloadEvent && eventId != null
         ? normalizeSnapshot({
             ...raw,
             id: eventId,
@@ -424,9 +502,17 @@ function parseSseEvent(frame: string): AgentEvent | null {
         : undefined;
 
     return {
-      type: typeof raw.type === "string" ? raw.type : "unknown",
-      download_id: eventId ?? (typeof raw.download_id === "string" ? raw.download_id : undefined),
-      capture_id: asString(raw.capture_id) ?? asString(raw.captureId),
+      type: eventType,
+      download_id: isDownloadEvent
+        ? eventId ??
+          asString(raw.download_id) ??
+          asString(raw.downloadId) ??
+          nestedDownloadId
+        : undefined,
+      capture_id:
+        asString(raw.capture_id) ??
+        asString(raw.captureId) ??
+        (eventType.startsWith("capture.") ? eventId : undefined),
       timestamp: typeof raw.timestamp === "string" ? raw.timestamp : undefined,
       snapshot,
       message: typeof raw.message === "string" ? raw.message : undefined,
@@ -464,11 +550,21 @@ export function connectEvents(onEvent: EventCallback, onError?: ErrorCallback): 
     abortController = new AbortController();
     try {
       const token = await getToken();
-      const res = await fetch(`${AGENT_FETCH_BASE}${EVENTS_PATH}`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        signal: abortController.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch(`${AGENT_FETCH_BASE}${EVENTS_PATH}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        });
+      } catch (error) {
+        if (!USE_TAURI_HTTP_FALLBACK) throw error;
+        res = await tauriFetch(`${AGENT_FETCH_BASE}${EVENTS_PATH}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        });
+      }
 
       if (!res.ok || !res.body) {
         if (res.status === 401 || res.status === 403) {
@@ -541,3 +637,6 @@ export function connectEvents(onEvent: EventCallback, onError?: ErrorCallback): 
     abortController?.abort();
   };
 }
+
+
+

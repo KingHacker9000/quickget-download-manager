@@ -32,3 +32,13 @@ git push origin v0.1.0
 
 - Do not mark macOS/Linux artifacts as tested.
 - Windows remains the only actively tested platform at this stage.
+
+## Runtime Verification Checklist (Before QA)
+
+1. Run a fresh `npm run build` and `npm run tauri:build` from this repo.
+2. Launch the newly built binary from `src-tauri/target/release`.
+3. Open **About** and verify frontend/backend build stamps match the latest build time and commit.
+4. Trigger a browser capture and confirm:
+   - capture UI opens in a separate popup window (not inside main Downloads page),
+   - main window stays hidden unless explicitly opened,
+   - no ghost job row appears and no `job not found: <capture_id>` action errors occur.

@@ -47,7 +47,10 @@ export function DownloadHistoryDetailsModal({ open, download, onClose, onNotify 
   const outputPath = download?.output_path;
   const downloadFolder = useMemo(() => dirname(outputPath), [outputPath]);
   const completedAt = download?.completed_at ?? download?.updated_at;
-  const startedAt = (download?.metadata?.startedAt as string | undefined) ?? (download?.metadata?.started_at as string | undefined);
+  const startedAt =
+    (download?.metadata?.startedAt as string | undefined) ??
+    (download?.metadata?.started_at as string | undefined) ??
+    download?.created_at;
   const durationMs = download?.metadata?.durationMs as number | undefined;
   const averageSpeed = useMemo(() => {
     if (!download) return undefined;

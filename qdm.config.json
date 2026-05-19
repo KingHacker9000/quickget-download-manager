@@ -1,6 +1,8 @@
 {
   "quickgetRepo": "KingHacker9000/quickget",
   "quickgetAgentVersion": "latest",
+  "quickgetNativeHostVersion": "latest",
+  "extensionOrigins": ["cggdadenihpmfnealcpjflneipnjhjnc"],
   "agentPort": 19329,
   "agentHost": "127.0.0.1"
 }

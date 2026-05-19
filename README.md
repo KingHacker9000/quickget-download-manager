@@ -47,6 +47,9 @@ Fetch `quickget-agent` sidecar:
 npm run fetch-agent
 ```
 
+`fetch-agent` also prepares the `quickget-native-host` sidecar used by the browser extension bridge.
+Set browser extension origin(s) in `qdm.config.json` (`extensionOrigins`) so QDM can auto-register native messaging on startup.
+
 Run desktop app (release-fetched sidecar):
 
 ```bash

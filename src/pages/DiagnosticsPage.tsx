@@ -3,6 +3,10 @@ import type { DiagnosticEntry } from "../utils/diagnostics";
 type Props = {
   diagnostics: DiagnosticEntry[];
   onCopyDiagnostics: () => Promise<void>;
+  frontendBuildCommit: string;
+  frontendBuildTime: string;
+  backendBuildCommit?: string | null;
+  backendBuildUnix?: string | null;
 };
 
 function levelClass(level: DiagnosticEntry["level"]): string {
@@ -11,13 +15,29 @@ function levelClass(level: DiagnosticEntry["level"]): string {
   return "text-cyan-300";
 }
 
-export function DiagnosticsPage({ diagnostics, onCopyDiagnostics }: Props) {
+function formatUnixSeconds(raw?: string | null): string {
+  const secs = Number(raw ?? "");
+  if (!Number.isFinite(secs) || secs <= 0) return "unknown";
+  return new Date(secs * 1000).toISOString();
+}
+
+export function DiagnosticsPage({
+  diagnostics,
+  onCopyDiagnostics,
+  frontendBuildCommit,
+  frontendBuildTime,
+  backendBuildCommit,
+  backendBuildUnix,
+}: Props) {
   return (
     <section className="space-y-4">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold text-slate-100">Diagnostics</h2>
           <p className="text-xs text-slate-400">Recent agent and UI events (sensitive headers and tokens are redacted).</p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Frontend: {frontendBuildCommit} @ {frontendBuildTime} | Backend: {backendBuildCommit ?? "unknown"} @ {formatUnixSeconds(backendBuildUnix)}
+          </p>
         </div>
         <button
           type="button"
@@ -50,4 +70,3 @@ export function DiagnosticsPage({ diagnostics, onCopyDiagnostics }: Props) {
     </section>
   );
 }
-

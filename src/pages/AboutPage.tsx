@@ -1,16 +1,25 @@
 import { APP_NAME, QDM_REPO_URL, QUICKGET_REPO_URL } from "../constants/appInfo";
-import type { AgentStatus } from "../types/agent";
+import type { AgentStatus, QdmRuntimeBuildInfo } from "../types/agent";
 
 type Props = {
   appVersion: string;
   agentStatus: AgentStatus | null;
+  runtimeBuildInfo: QdmRuntimeBuildInfo | null;
+  frontendBuildCommit: string;
+  frontendBuildTime: string;
 };
 
 function valueOrUnknown(value?: string | null): string {
   return value && value.trim() ? value : "unknown";
 }
 
-export function AboutPage({ appVersion, agentStatus }: Props) {
+function formatUnixSeconds(raw: string | undefined): string {
+  const secs = Number(raw);
+  if (!Number.isFinite(secs) || secs <= 0) return "unknown";
+  return new Date(secs * 1000).toISOString();
+}
+
+export function AboutPage({ appVersion, agentStatus, runtimeBuildInfo, frontendBuildCommit, frontendBuildTime }: Props) {
   return (
     <section className="space-y-4">
       <header>
@@ -35,6 +44,22 @@ export function AboutPage({ appVersion, agentStatus }: Props) {
           <div>
             <dt className="text-slate-500">API version</dt>
             <dd className="text-slate-100">{valueOrUnknown(agentStatus?.api_version)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Frontend build commit</dt>
+            <dd className="text-slate-100">{valueOrUnknown(frontendBuildCommit)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Frontend build time</dt>
+            <dd className="text-slate-100">{valueOrUnknown(frontendBuildTime)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Backend build commit</dt>
+            <dd className="text-slate-100">{valueOrUnknown(runtimeBuildInfo?.backend_build_commit)}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-500">Backend build time</dt>
+            <dd className="text-slate-100">{formatUnixSeconds(runtimeBuildInfo?.backend_build_unix)}</dd>
           </div>
         </dl>
       </div>

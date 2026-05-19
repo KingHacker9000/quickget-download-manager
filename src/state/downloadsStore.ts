@@ -65,7 +65,24 @@ function eventState(eventType: string, fallback: DownloadSnapshot["state"]): Dow
   return fallback;
 }
 
+function shouldIgnoreEventForCurrentState(current: DownloadSnapshot | undefined, event: AgentEvent): boolean {
+  if (!current) return false;
+  const currentState = current.state;
+  if (!event.type.startsWith("download.")) return false;
+
+  // Once terminal, ignore late non-terminal events.
+  if (currentState === "completed" || currentState === "cancelled" || currentState === "failed") {
+    return event.type === "download.created" || event.type === "download.started" || event.type === "download.progress";
+  }
+  // While paused, ignore late progress frames from in-flight goroutines.
+  if (currentState === "paused") {
+    return event.type === "download.progress";
+  }
+  return false;
+}
+
 function buildSnapshotFromEvent(event: AgentEvent): DownloadSnapshot | null {
+  if (!event.type.startsWith("download.")) return null;
   if (!event.download_id) return null;
   const sourceField =
     event.data && typeof event.data.source === "string" && event.data.source.trim().length > 0
@@ -174,6 +191,14 @@ export function replaceDownloads(downloads: DownloadSnapshot[]) {
 }
 
 export function applyEvent(event: AgentEvent) {
+  if (!event.type.startsWith("download.")) {
+    return;
+  }
+  const current = event.download_id ? state.byId[event.download_id] : undefined;
+  if (shouldIgnoreEventForCurrentState(current, event)) {
+    return;
+  }
+
   if (event.snapshot && event.snapshot.id) {
     if (debugProgressEnabled && event.type === "download.progress") {
       console.debug("[QDM] store apply progress event", {
@@ -196,6 +221,32 @@ export function applyEvent(event: AgentEvent) {
   const synthetic = buildSnapshotFromEvent(event);
   if (!synthetic) return;
   setState((current) => upsertInto(current, synthetic));
+}
+
+export function reconcileDownloads(authoritative: DownloadSnapshot[]): string[] {
+  const keep = new Set(authoritative.map((snapshot) => snapshot.id).filter((id) => id.length > 0));
+  let removedIds: string[] = [];
+  setState((current) => {
+    const byId: Record<string, DownloadSnapshot> = {};
+    const nextRemoved: string[] = [];
+    for (const [id, snapshot] of Object.entries(current.byId)) {
+      if (!keep.has(id)) {
+        nextRemoved.push(id);
+        continue;
+      }
+      byId[id] = snapshot;
+    }
+    removedIds = nextRemoved;
+    for (const snapshot of authoritative) {
+      if (!snapshot.id) continue;
+      byId[snapshot.id] = cloneSnapshot(ensureSource(snapshot));
+    }
+    return withDerivedLists({
+      ...current,
+      byId,
+    });
+  });
+  return removedIds;
 }
 
 function subscribe(listener: () => void) {

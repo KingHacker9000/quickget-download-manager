@@ -1,43 +1,47 @@
 {
-  "name": "quickget-download-manager",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 1420 --strictPort",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "fetch-agent": "npx tsx scripts/fetch-agent.ts",
-    "pretauri:dev": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference='SilentlyContinue'; Get-Process app,quickget-agent,quickget-agent-x86_64-pc-windows-msvc | Stop-Process -Force; exit 0\"",
-    "dev:local-agent": "cross-env QDM_USE_LOCAL_AGENT=1 npm run tauri:dev",
-    "tauri": "npx tauri",
-    "tauri:dev": "npm run fetch-agent && npx tauri dev",
-    "tauri:build": "npm run fetch-agent && npx tauri build"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.9.0",
-    "@tauri-apps/cli": "^2.11.2",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.20",
-    "cross-env": "^7.0.3",
-    "eslint": "^9.9.0",
-    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
-    "eslint-plugin-react-refresh": "^0.4.9",
-    "globals": "^15.9.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
-    "tsx": "^4.19.2",
-    "typescript": "^5.5.3",
-    "typescript-eslint": "^8.0.1",
-    "vite": "^5.4.1"
-  }
+    "name":  "quickget-download-manager",
+    "private":  true,
+    "version":  "0.1.0",
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "vite --host 0.0.0.0 --port 1420 --strictPort",
+                    "build":  "tsc -b \u0026\u0026 vite build",
+                    "test":  "tsx --test scripts/fetch-agent.test.ts",
+                    "lint":  "eslint .",
+                    "preview":  "vite preview",
+                    "fetch-agent":  "npx tsx scripts/fetch-agent.ts",
+                    "pretauri:dev":  "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\u0027SilentlyContinue\u0027; Get-Process app,quickget-agent,quickget-agent-x86_64-pc-windows-msvc | Stop-Process -Force; exit 0\"",
+                    "dev:local-agent":  "cross-env QDM_USE_LOCAL_AGENT=1 npm run tauri:dev",
+                    "tauri":  "npx tauri",
+                    "tauri:dev":  "npm run fetch-agent \u0026\u0026 npx tauri dev",
+                    "tauri:build":  "npm run fetch-agent \u0026\u0026 npx tauri build",
+                    "pretauri:build":  "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ErrorActionPreference=\u0027SilentlyContinue\u0027; Get-Process app,quickget-agent,quickget-agent-x86_64-pc-windows-msvc | Stop-Process -Force; exit 0\""
+                },
+    "dependencies":  {
+                         "@tauri-apps/api":  "^2.11.0",
+                         "@tauri-apps/plugin-dialog":  "^2.7.1",
+                         "react":  "^18.3.1",
+                         "react-dom":  "^18.3.1",
+                         "@tauri-apps/plugin-http":  "^2.0.0"
+                     },
+    "devDependencies":  {
+                            "@eslint/js":  "^9.9.0",
+                            "@tauri-apps/cli":  "^2.11.2",
+                            "@types/react":  "^18.3.3",
+                            "@types/react-dom":  "^18.3.0",
+                            "@vitejs/plugin-react":  "^4.3.1",
+                            "autoprefixer":  "^10.4.20",
+                            "cross-env":  "^7.0.3",
+                            "eslint":  "^9.9.0",
+                            "eslint-plugin-react-hooks":  "^5.1.0-rc.0",
+                            "eslint-plugin-react-refresh":  "^0.4.9",
+                            "globals":  "^15.9.0",
+                            "postcss":  "^8.5.6",
+                            "tailwindcss":  "^3.4.17",
+                            "tsx":  "^4.19.2",
+                            "typescript":  "^5.5.3",
+                            "typescript-eslint":  "^8.0.1",
+                            "vite":  "^5.4.1"
+                        }
 }
+

@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   AGENT_EVENT_DOWNLOAD_COMPLETED,
   type AgentConnectionState,
   type AgentStatus,
   type CreateDownloadRequest,
+  type QdmRuntimeBuildInfo,
 } from "./types/agent";
 import {
   cancelProfilerRun,
@@ -14,6 +16,7 @@ import {
   connectEvents,
   createDownload,
   deleteDownload,
+  getDownload,
   getCapture,
   listCaptures,
   getProfilerStatus,
@@ -28,6 +31,7 @@ import {
 import { getSettings, handleQuitAction, hasActiveDownloads, saveSettings } from "./api/settingsClient";
 import {
   applyEvent,
+  reconcileDownloads,
   replaceDownloads,
   setAgentError,
   setConnectionStatus,
@@ -49,7 +53,7 @@ import { AGENT_EVENT_DOWNLOAD_FAILED } from "./types/agent";
 import { BrowserCapturePopup } from "./components/BrowserCapturePopup";
 import { fileExists, openDownloadFile, openDownloadFolder } from "./api/fileActionsClient";
 import { removeCapture, replaceCaptures, setActiveCapturePopup, upsertCapture, useCapturesStore } from "./state/capturesStore";
-import { APP_NAME, APP_VERSION } from "./constants/appInfo";
+import { APP_NAME, APP_VERSION, FRONTEND_BUILD_COMMIT, FRONTEND_BUILD_TIME } from "./constants/appInfo";
 import { formatDiagnosticsReport, sanitizeDiagnostic, type DiagnosticEntry, type DiagnosticLevel, type DiagnosticSource } from "./utils/diagnostics";
 import { isSupportedAgentApiVersion, mapFriendlyError, REQUIRED_AGENT_API_MESSAGE, toFriendlyErrorMessage } from "./utils/errorMessages";
 
@@ -84,6 +88,16 @@ async function notifyCompletion(message: string) {
 }
 
 export default function App() {
+  const isCapturePopupWindow = (() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("capturePopup") === "1") {
+      return true;
+    }
+    try {
+      return getCurrentWindow().label === "capture-popup";
+    } catch {
+      return false;
+    }
+  })();
   const [agentState, setAgentState] = useState<AgentConnectionState>("starting");
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -103,6 +117,8 @@ export default function App() {
   const downloadsState = useDownloadsStore();
   const capturesState = useCapturesStore();
   const [captureBusyId, setCaptureBusyId] = useState<string | null>(null);
+  const [captureWindowDownloadId, setCaptureWindowDownloadId] = useState<string | null>(null);
+  const [runtimeBuildInfo, setRuntimeBuildInfo] = useState<QdmRuntimeBuildInfo | null>(null);
 
   const pushDiagnostic = (
     source: DiagnosticSource,
@@ -145,8 +161,35 @@ export default function App() {
     });
   };
 
+  const showCapturePopupWindow = async () => {
+    try {
+      await invoke("show_capture_popup_window");
+    } catch (error) {
+      const message = toFriendlyErrorMessage(error, "Failed to open browser capture popup window.");
+      pushDiagnostic("system", message, "warn");
+    }
+  };
+
   useEffect(() => {
     pushDiagnostic("system", `${APP_NAME} ${APP_VERSION} started`);
+    pushDiagnostic("system", `Window role: ${isCapturePopupWindow ? "capture-popup" : "main"}`, "info", {
+      frontendBuildCommit: FRONTEND_BUILD_COMMIT,
+      frontendBuildTime: FRONTEND_BUILD_TIME,
+    });
+    console.info("[QDM] window startup", {
+      role: isCapturePopupWindow ? "capture-popup" : "main",
+      frontendBuildCommit: FRONTEND_BUILD_COMMIT,
+      frontendBuildTime: FRONTEND_BUILD_TIME,
+    });
+    void invoke<QdmRuntimeBuildInfo>("get_qdm_runtime_build_info")
+      .then((info) => {
+        setRuntimeBuildInfo(info);
+        pushDiagnostic("system", "Loaded runtime build stamp", "info", info as unknown as Record<string, unknown>);
+      })
+      .catch((error) => {
+        const message = toFriendlyErrorMessage(error, "Failed to read runtime build stamp.");
+        pushDiagnostic("system", message, "warn");
+      });
   }, []);
 
   useEffect(() => {
@@ -209,6 +252,12 @@ export default function App() {
         const captures = await listCaptures().catch(() => []);
         if (!active) return;
         replaceDownloads(downloads);
+        const removedGhostIds = reconcileDownloads(downloads);
+        if (removedGhostIds.length > 0) {
+          pushDiagnostic("system", `Startup ghost cleanup removed ${removedGhostIds.length} stale row(s).`, "warn", {
+            removedIds: removedGhostIds,
+          });
+        }
         replaceCaptures(captures);
         setAgentState("connected");
         setConnectionStatus("connected");
@@ -240,11 +289,47 @@ export default function App() {
                   })
                   .catch(() => {});
               }
+              if (event.type === "capture.started") {
+                const startedDownloadId =
+                  (typeof event.data?.download_id === "string" ? event.data.download_id : undefined) ??
+                  (typeof event.data?.downloadId === "string" ? event.data.downloadId : undefined);
+                if (startedDownloadId) {
+                  setCaptureWindowDownloadId(startedDownloadId);
+                  void getDownload(startedDownloadId)
+                    .then((snapshot) => {
+                      upsertDownload(snapshot);
+                    })
+                    .catch(() => {
+                      void listDownloads()
+                        .then((downloads) => {
+                          replaceDownloads(downloads);
+                          reconcileDownloads(downloads);
+                        })
+                        .catch(() => {});
+                    });
+                }
+              }
               const currentSettings = settingsRef.current;
-              if (event.type === "capture.requested" && currentSettings?.browserCapture.openFullQdmOnCapture) {
+              if (
+                event.type === "capture.requested" &&
+                currentSettings?.browserCapture.openFullQdmOnCapture &&
+                !currentSettings?.browserCapture.showMiniPopupOnCapture
+              ) {
                 void invoke("show_main_window");
               }
-              if (event.type === "capture.requested" && !currentSettings?.browserCapture.openFullQdmOnCapture && currentSettings?.browserCapture.showMiniPopupOnCapture) {
+              if (
+                event.type === "capture.requested" &&
+                !isCapturePopupWindow &&
+                currentSettings?.browserCapture.showMiniPopupOnCapture
+              ) {
+                void showCapturePopupWindow();
+              }
+              if (
+                event.type === "capture.requested" &&
+                !isCapturePopupWindow &&
+                !currentSettings?.browserCapture.openFullQdmOnCapture &&
+                currentSettings?.browserCapture.showMiniPopupOnCapture
+              ) {
                 void notifyCompletion("Browser download captured in QDM");
               }
             }
@@ -388,7 +473,7 @@ export default function App() {
       active = false;
       if (disconnectEvents) disconnectEvents();
     };
-  }, []);
+  }, [isCapturePopupWindow]);
 
   useEffect(() => {
     void (async () => {
@@ -411,11 +496,13 @@ export default function App() {
       listen("tray://downloads-paused", async () => {
         const downloads = await listDownloads();
         replaceDownloads(downloads);
+        reconcileDownloads(downloads);
         pushToast("All active downloads paused", "info");
       }),
       listen("tray://downloads-resumed", async () => {
         const downloads = await listDownloads();
         replaceDownloads(downloads);
+        reconcileDownloads(downloads);
         pushToast("Paused downloads resumed", "info");
       }),
       listen("app://request-quit", async () => {
@@ -461,6 +548,35 @@ export default function App() {
       setErrorMessage(mapFriendlyError(downloadsState.agentError) ?? downloadsState.agentError ?? "quickget-agent error");
     }
   }, [downloadsState.connectionStatus, downloadsState.agentError, agentState]);
+
+  useEffect(() => {
+    if (agentState !== "connected") {
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void listDownloads()
+        .then((authoritative) => {
+          if (cancelled) return;
+          const removed = reconcileDownloads(authoritative);
+          if (removed.length > 0) {
+            pushDiagnostic("system", `Authoritative cleanup removed ${removed.length} stale row(s).`, "warn", {
+              removedIds: removed,
+            });
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          const message = toFriendlyErrorMessage(error, "Failed authoritative cleanup refresh.");
+          pushDiagnostic("system", message, "warn");
+        });
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [agentState]);
 
   const onCreateDownload = async (request: CreateDownloadRequest) => {
     try {
@@ -563,6 +679,7 @@ export default function App() {
       await deleteDownload(id, false);
       const downloads = await listDownloads();
       replaceDownloads(downloads);
+      reconcileDownloads(downloads);
     });
   };
 
@@ -583,6 +700,49 @@ export default function App() {
   };
 
   const activeCapture = capturesState.activeCapturePopup;
+  const popupDownload = useMemo(() => {
+    if (captureWindowDownloadId && downloadsState.byId[captureWindowDownloadId]) {
+      return downloadsState.byId[captureWindowDownloadId];
+    }
+    return downloadsState.activeDownloads[0] ?? null;
+  }, [captureWindowDownloadId, downloadsState.activeDownloads, downloadsState.byId]);
+
+  useEffect(() => {
+    if (!captureWindowDownloadId) return;
+    const tracked = downloadsState.byId[captureWindowDownloadId];
+    if (!tracked) {
+      setCaptureWindowDownloadId(null);
+    }
+  }, [captureWindowDownloadId, downloadsState.byId]);
+
+  useEffect(() => {
+    if (!isCapturePopupWindow) {
+      return;
+    }
+    if (activeCapture || popupDownload) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void invoke("hide_capture_popup_window").catch((error) => {
+        const message = toFriendlyErrorMessage(error, "Failed to hide browser capture popup window.");
+        pushDiagnostic("system", message, "warn");
+      });
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [isCapturePopupWindow, activeCapture, popupDownload]);
+
+  useEffect(() => {
+    if (isCapturePopupWindow) {
+      return;
+    }
+    if (!settings?.browserCapture.showMiniPopupOnCapture) {
+      return;
+    }
+    if (capturesState.pending.length === 0) {
+      return;
+    }
+    void showCapturePopupWindow();
+  }, [capturesState.pending.length, isCapturePopupWindow, settings?.browserCapture.showMiniPopupOnCapture]);
 
   const runCaptureAction = async (captureId: string, action: () => Promise<void>) => {
     try {
@@ -605,6 +765,7 @@ export default function App() {
       removeCapture(captureId);
       const downloads = await listDownloads();
       replaceDownloads(downloads);
+      reconcileDownloads(downloads);
       pushToast("Capture started", "success");
     });
   };
@@ -638,6 +799,7 @@ export default function App() {
       removeCapture(captureId);
       const downloads = await listDownloads();
       replaceDownloads(downloads);
+      reconcileDownloads(downloads);
       pushToast("Existing file was missing. Started download instead.", "info");
     });
   };
@@ -781,6 +943,10 @@ export default function App() {
         agentState,
         agentVersion: agentStatus?.version,
         agentApiVersion: agentStatus?.api_version,
+        frontendBuildCommit: FRONTEND_BUILD_COMMIT,
+        frontendBuildTime: FRONTEND_BUILD_TIME,
+        backendBuildCommit: runtimeBuildInfo?.backend_build_commit ?? null,
+        backendBuildUnix: runtimeBuildInfo?.backend_build_unix ?? null,
         diagnostics,
       });
       await navigator.clipboard.writeText(report);
@@ -795,51 +961,64 @@ export default function App() {
 
   return (
     <>
-      <DownloadsPage
-        agentState={agentState}
-        agentStatus={agentStatus}
-        errorMessage={errorMessage}
-        activeDownloads={downloadsState.activeDownloads}
-        recentCompletedDownloads={downloadsState.recentCompletedDownloads}
-        historyDownloads={downloadsState.historyDownloads}
-        busyIds={busyIds}
-        onCreateDownload={onCreateDownload}
-        onPause={onPause}
-        onResume={onResume}
-        onCancel={onCancel}
-        onDelete={onDelete}
-        settings={settings}
-        settingsBusy={settingsBusy}
-        onSettingsChange={onSettingsChange}
-        onRunProfiler={onRunProfiler}
-        onCancelProfiler={onCancelProfiler}
-        onRefreshProfilerStatus={onRefreshProfilerStatus}
-        onRestoreRecommended={onRestoreRecommended}
-        forceShowDownloadsToken={forceShowDownloadsToken}
-        onNotify={pushToast}
-        appVersion={APP_VERSION}
-        diagnostics={diagnostics}
-        onCopyDiagnostics={onCopyDiagnostics}
-      />
-      <Toasts items={toasts} onDismiss={dismissToast} />
-      <QuitConfirmModal
-        open={showQuitPrompt}
-        busy={quitBusy}
-        onPauseAndQuit={() => void runQuitAction("pauseAndQuit")}
-        onKeepRunning={() => void runQuitAction("keepRunning")}
-        onCancel={() => void runQuitAction("cancel")}
-      />
-      {activeCapture && settings?.browserCapture.showMiniPopupOnCapture ? (
+      {isCapturePopupWindow ? (
         <BrowserCapturePopup
+          mode="window"
           capture={activeCapture}
-          defaultOutputDir={settings.defaultDownloadFolder}
-          defaultSpeedMode={settings.speedMode}
-          busy={captureBusyId === activeCapture.id}
-          onStart={(request) => onStartCapture(activeCapture.id, request)}
-          onReject={() => onRejectCapture(activeCapture.id)}
+          activeDownload={popupDownload}
+          defaultOutputDir={settings?.defaultDownloadFolder ?? null}
+          defaultSpeedMode={settings?.speedMode ?? "auto"}
+          busy={activeCapture ? captureBusyId === activeCapture.id : false}
+          onStart={(request) => (activeCapture ? onStartCapture(activeCapture.id, request) : Promise.resolve())}
+          onReject={() => (activeCapture ? onRejectCapture(activeCapture.id) : Promise.resolve())}
           onOpenFullQdm={() => invoke("show_main_window")}
-          onShowExisting={() => onShowCaptureExisting(activeCapture.id)}
+          onClosePopup={() => invoke("hide_capture_popup_window")}
+          onShowExisting={() => (activeCapture ? onShowCaptureExisting(activeCapture.id) : Promise.resolve())}
+          onPauseDownload={onPause}
+          onResumeDownload={onResume}
+          onCancelDownload={onCancel}
         />
+      ) : null}
+      {!isCapturePopupWindow ? (
+        <>
+          <DownloadsPage
+            agentState={agentState}
+            agentStatus={agentStatus}
+            errorMessage={errorMessage}
+            activeDownloads={downloadsState.activeDownloads}
+            recentCompletedDownloads={downloadsState.recentCompletedDownloads}
+            historyDownloads={downloadsState.historyDownloads}
+            busyIds={busyIds}
+            onCreateDownload={onCreateDownload}
+            onPause={onPause}
+            onResume={onResume}
+            onCancel={onCancel}
+            onDelete={onDelete}
+            settings={settings}
+            settingsBusy={settingsBusy}
+            onSettingsChange={onSettingsChange}
+            onRunProfiler={onRunProfiler}
+            onCancelProfiler={onCancelProfiler}
+            onRefreshProfilerStatus={onRefreshProfilerStatus}
+            onRestoreRecommended={onRestoreRecommended}
+            forceShowDownloadsToken={forceShowDownloadsToken}
+            onNotify={pushToast}
+            appVersion={APP_VERSION}
+            runtimeBuildInfo={runtimeBuildInfo}
+            frontendBuildCommit={FRONTEND_BUILD_COMMIT}
+            frontendBuildTime={FRONTEND_BUILD_TIME}
+            diagnostics={diagnostics}
+            onCopyDiagnostics={onCopyDiagnostics}
+          />
+          <Toasts items={toasts} onDismiss={dismissToast} />
+          <QuitConfirmModal
+            open={showQuitPrompt}
+            busy={quitBusy}
+            onPauseAndQuit={() => void runQuitAction("pauseAndQuit")}
+            onKeepRunning={() => void runQuitAction("keepRunning")}
+            onCancel={() => void runQuitAction("cancel")}
+          />
+        </>
       ) : null}
     </>
   );

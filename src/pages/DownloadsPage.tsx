@@ -15,6 +15,7 @@ import type {
   AgentStatus,
   CreateDownloadRequest,
   DownloadSnapshot,
+  QdmRuntimeBuildInfo,
 } from "../types/agent";
 import type { AppSettings } from "../types/settings";
 import type { DiagnosticEntry } from "../utils/diagnostics";
@@ -43,6 +44,9 @@ type Props = {
   forceShowDownloadsToken: number;
   onNotify: (message: string, tone?: "info" | "success" | "error") => void;
   appVersion: string;
+  runtimeBuildInfo: QdmRuntimeBuildInfo | null;
+  frontendBuildCommit: string;
+  frontendBuildTime: string;
   diagnostics: DiagnosticEntry[];
   onCopyDiagnostics: () => Promise<void>;
 };
@@ -96,6 +100,9 @@ export function DownloadsPage({
   forceShowDownloadsToken,
   onNotify,
   appVersion,
+  runtimeBuildInfo,
+  frontendBuildCommit,
+  frontendBuildTime,
   diagnostics,
   onCopyDiagnostics,
 }: Props) {
@@ -273,9 +280,22 @@ export function DownloadsPage({
           )}
         </section>
       ) : activeSection === "Diagnostics" ? (
-        <DiagnosticsPage diagnostics={diagnostics} onCopyDiagnostics={onCopyDiagnostics} />
+        <DiagnosticsPage
+          diagnostics={diagnostics}
+          onCopyDiagnostics={onCopyDiagnostics}
+          frontendBuildCommit={frontendBuildCommit}
+          frontendBuildTime={frontendBuildTime}
+          backendBuildCommit={runtimeBuildInfo?.backend_build_commit}
+          backendBuildUnix={runtimeBuildInfo?.backend_build_unix}
+        />
       ) : activeSection === "About" ? (
-        <AboutPage appVersion={appVersion} agentStatus={agentStatus} />
+        <AboutPage
+          appVersion={appVersion}
+          agentStatus={agentStatus}
+          runtimeBuildInfo={runtimeBuildInfo}
+          frontendBuildCommit={frontendBuildCommit}
+          frontendBuildTime={frontendBuildTime}
+        />
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-sm text-slate-400">
           {activeSection} section is reserved for upcoming releases.

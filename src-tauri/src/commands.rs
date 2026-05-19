@@ -1,5 +1,5 @@
 use crate::{agent, download_control, settings, tray};
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 use std::path::{Path, PathBuf};
 
@@ -272,6 +272,68 @@ pub async fn resume_all_downloads() -> Result<(), String> {
 #[tauri::command]
 pub fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
   tray::show_main_window(&app).map_err(|e| e.to_string())
+}
+
+fn ensure_capture_popup_window(app: &tauri::AppHandle) -> Result<tauri::WebviewWindow, String> {
+  if let Some(window) = app.get_webview_window("capture-popup") {
+    return Ok(window);
+  }
+
+  log::info!("creating capture popup window");
+  WebviewWindowBuilder::new(app, "capture-popup", WebviewUrl::App("index.html".into()))
+    .title("QuickGet Browser Capture")
+    .inner_size(760.0, 300.0)
+    .min_inner_size(440.0, 220.0)
+    .resizable(true)
+    .always_on_top(true)
+    .build()
+    .map_err(|e| {
+      let message = e.to_string();
+      log::warn!("failed to create capture popup window: {message}");
+      message
+    })
+}
+
+#[tauri::command]
+pub async fn show_capture_popup_window(app: tauri::AppHandle) -> Result<(), String> {
+  let window = ensure_capture_popup_window(&app)?;
+  if let Err(error) = window.show() {
+    log::warn!("failed to show capture popup window: {error}");
+  }
+  if let Err(error) = window.unminimize() {
+    log::warn!("failed to unminimize capture popup window: {error}");
+  }
+  if let Err(error) = window.set_focus() {
+    log::warn!("failed to focus capture popup window: {error}");
+  }
+  Ok(())
+}
+
+#[tauri::command]
+pub async fn hide_capture_popup_window(app: tauri::AppHandle) -> Result<(), String> {
+  if let Some(window) = app.get_webview_window("capture-popup") {
+    if let Err(error) = window.hide() {
+      log::warn!("failed to hide capture popup window: {error}");
+    }
+  }
+  Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QdmRuntimeBuildInfo {
+  pub app_version: String,
+  pub backend_build_commit: String,
+  pub backend_build_unix: String,
+}
+
+#[tauri::command]
+pub fn get_qdm_runtime_build_info() -> QdmRuntimeBuildInfo {
+  QdmRuntimeBuildInfo {
+    app_version: env!("CARGO_PKG_VERSION").to_string(),
+    backend_build_commit: option_env!("QDM_BACKEND_BUILD_COMMIT").unwrap_or("unknown").to_string(),
+    backend_build_unix: option_env!("QDM_BACKEND_BUILD_UNIX").unwrap_or("0").to_string(),
+  }
 }
 
 #[derive(serde::Serialize)]
