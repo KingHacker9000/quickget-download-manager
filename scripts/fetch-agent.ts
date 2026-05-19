@@ -112,7 +112,12 @@ async function copyLocalAgent(info: PlatformInfo, outPath: string): Promise<bool
   if (!forceLocal) return false;
   const candidates = [resolve("..", "QuickGet_CLI", info.localAgentName), resolve("..", "QuickGet _CLI", info.localAgentName)];
   for (const c of candidates) {
-    try { await copyWithLockHandling(c, outPath); return true; } catch {}
+    try {
+      await copyWithLockHandling(c, outPath);
+      return true;
+    } catch {
+      // Try the next local candidate path.
+    }
   }
   throw new Error(`QDM_USE_LOCAL_AGENT=1 but local agent not found. Checked: ${candidates.join(", ")}`);
 }
@@ -126,7 +131,12 @@ async function copyLocalNativeHost(info: PlatformInfo, outPath: string): Promise
     resolve("..", "QuickGet _CLI", "bin", localName),
   ];
   for (const c of candidates) {
-    try { await copyWithLockHandling(c, outPath); return true; } catch {}
+    try {
+      await copyWithLockHandling(c, outPath);
+      return true;
+    } catch {
+      // Try the next local candidate path.
+    }
   }
   return false;
 }
@@ -141,7 +151,9 @@ async function buildLocalNativeHost(info: PlatformInfo, outPath: string): Promis
         cliRoot = candidate;
         break;
       }
-    } catch {}
+    } catch {
+      // Probe the next workspace candidate.
+    }
   }
   if (!cliRoot) return false;
 
