@@ -87,6 +87,13 @@ async function notifyCompletion(message: string) {
   }
 }
 
+async function refreshDownloadsFromAgent() {
+  const downloads = await listDownloads();
+  replaceDownloads(downloads);
+  const removedIds = reconcileDownloads(downloads);
+  return { downloads, removedIds };
+}
+
 export default function App() {
   const isCapturePopupWindow = (() => {
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("capturePopup") === "1") {
@@ -248,11 +255,9 @@ export default function App() {
           return;
         }
 
-        const downloads = await listDownloads();
+        const { downloads, removedIds: removedGhostIds } = await refreshDownloadsFromAgent();
         const captures = await listCaptures().catch(() => []);
         if (!active) return;
-        replaceDownloads(downloads);
-        const removedGhostIds = reconcileDownloads(downloads);
         if (removedGhostIds.length > 0) {
           pushDiagnostic("system", `Startup ghost cleanup removed ${removedGhostIds.length} stale row(s).`, "warn", {
             removedIds: removedGhostIds,
@@ -300,12 +305,7 @@ export default function App() {
                       upsertDownload(snapshot);
                     })
                     .catch(() => {
-                      void listDownloads()
-                        .then((downloads) => {
-                          replaceDownloads(downloads);
-                          reconcileDownloads(downloads);
-                        })
-                        .catch(() => {});
+                      void refreshDownloadsFromAgent().catch(() => {});
                     });
                 }
               }
@@ -494,15 +494,11 @@ export default function App() {
         setForceShowDownloadsToken((v) => v + 1);
       }),
       listen("tray://downloads-paused", async () => {
-        const downloads = await listDownloads();
-        replaceDownloads(downloads);
-        reconcileDownloads(downloads);
+        await refreshDownloadsFromAgent();
         pushToast("All active downloads paused", "info");
       }),
       listen("tray://downloads-resumed", async () => {
-        const downloads = await listDownloads();
-        replaceDownloads(downloads);
-        reconcileDownloads(downloads);
+        await refreshDownloadsFromAgent();
         pushToast("Paused downloads resumed", "info");
       }),
       listen("app://request-quit", async () => {
@@ -677,9 +673,7 @@ export default function App() {
     pushDiagnostic("ui", `Delete requested for ${id}`);
     await runAction(id, async () => {
       await deleteDownload(id, false);
-      const downloads = await listDownloads();
-      replaceDownloads(downloads);
-      reconcileDownloads(downloads);
+      await refreshDownloadsFromAgent();
     });
   };
 
@@ -763,9 +757,7 @@ export default function App() {
     await runCaptureAction(captureId, async () => {
       await startCaptureDownload(captureId, request);
       removeCapture(captureId);
-      const downloads = await listDownloads();
-      replaceDownloads(downloads);
-      reconcileDownloads(downloads);
+      await refreshDownloadsFromAgent();
       pushToast("Capture started", "success");
     });
   };
@@ -797,9 +789,7 @@ export default function App() {
         speed_mode: settingsRef.current?.speedMode ?? "auto",
       });
       removeCapture(captureId);
-      const downloads = await listDownloads();
-      replaceDownloads(downloads);
-      reconcileDownloads(downloads);
+      await refreshDownloadsFromAgent();
       pushToast("Existing file was missing. Started download instead.", "info");
     });
   };
